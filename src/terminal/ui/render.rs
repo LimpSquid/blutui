@@ -170,7 +170,7 @@ fn render_keybindings(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             ("SPACEBAR", "Change Focus"),
             ("🡳/🡱/HOME/END", "Selection"),
             ("r", "Refresh"),
-            ("b/n", "Skip/Back"),
+            ("b/n", "Back/Skip"),
             ("(CTRL) + j/l", "(Device) Volume Up/Down"),
             (
                 "p",

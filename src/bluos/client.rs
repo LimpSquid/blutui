@@ -15,7 +15,7 @@ const DEFAULT_POLL_TIMEOUT: u8 = 60;
 // In seconds
 const POLL_GRACE_PERIOD: u64 = 2;
 // In seconds
-const REQUEST_TIMEOUT: u64 = 2;
+const REQUEST_TIMEOUT: u64 = 3;
 // In seconds
 const REQUEST_TIMEOUT_LONG: u64 = 5;
 const DEFAULT_DEVICE_PORT: u16 = 11000;
