@@ -7,6 +7,7 @@ use super::super::client::HttpClient;
 use super::common::SharedClientMap;
 use super::device_profile::DeviceProfile;
 use super::group_profile::GroupProfile;
+use super::multiplayer_group_profile::MultiplayerGroupProfile;
 use crate::event::{Event, EventBus};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
@@ -14,15 +15,15 @@ use crate::event::{Event, EventBus};
 pub enum Profile {
     Device(DeviceProfile),
     Group(GroupProfile),
-    FixedGroup(()),
+    MultiplayerGroup(MultiplayerGroupProfile),
 }
 
 impl Profile {
     pub fn validate(&self) -> anyhow::Result<()> {
         match self {
-            Self::FixedGroup(()) => anyhow::bail!("unsupported"),
-            Self::Group(p) => p.validate()?,
             Self::Device(p) => p.validate()?,
+            Self::Group(p) => p.validate()?,
+            Self::MultiplayerGroup(p) => p.validate()?,
         }
 
         Ok(())
@@ -31,9 +32,9 @@ impl Profile {
     #[tracing::instrument(err, skip_all)]
     async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
         match self {
-            Self::FixedGroup(()) => anyhow::bail!("unsupported"),
-            Self::Group(p) => p.apply(clients).await,
             Self::Device(p) => p.apply(clients).await,
+            Self::Group(p) => p.apply(clients).await,
+            Self::MultiplayerGroup(p) => p.apply(clients).await,
         }
     }
 }

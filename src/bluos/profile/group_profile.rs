@@ -7,7 +7,9 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
+use super::super::client::ZoneMode;
 use super::super::protocol::LedBrightness;
+use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
 use super::common::*;
 use crate::types::DeviceId;
 
@@ -21,7 +23,7 @@ enum State {
     Check,
     UngroupSlaves,
     UngroupMasters,
-    WaitForUngroup,
+    WaitForDevices,
     Group,
     Configure,
     ConfigureInput,
@@ -41,7 +43,7 @@ impl State {
             | Self::Configure
             | Self::ConfigureInput
             | Self::ConfigureAudioPreset
-            | Self::WaitForUngroup => true,
+            | Self::WaitForDevices => true,
             Self::Wait { .. } | Self::Finished => false,
         }
     }
@@ -68,8 +70,8 @@ pub struct GroupProfileDevice {
 impl GroupProfileDevice {
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            (0..=100).contains(&self.volume_level.unwrap_or(0)),
-            "invalid volume level (allowed: 0 - 100)"
+            (MIN_VOLUME_LEVEL..=MAX_VOLUME_LEVEL).contains(&self.volume_level.unwrap_or(0)),
+            "invalid volume level (allowed: {MIN_VOLUME_LEVEL} - {MAX_VOLUME_LEVEL})"
         );
 
         if let Some(node_name) = self.node_name.as_deref() {
@@ -184,28 +186,33 @@ impl GroupProfile {
                 }
 
                 State::Check => {
-                    let (master_ip, master_port) =
-                        try_find_client_by_id(&clients, &self.master.device_id)?.ip_and_port();
-                    let master_n_slaves = try_find_facts_by_id(&facts, &self.master.device_id)?
-                        .group_status
-                        .slave
-                        .len();
-
-                    if self.slaves.len() == master_n_slaves
-                        && self.slaves.iter().all(|s| {
-                            match try_find_facts_by_id(&facts, &s.device_id) {
-                                Ok(f) => {
-                                    f.group_status.am_i_slave()
-                                        && f.group_status.master.as_ref().is_some_and(|m| {
-                                            m.ip_addr == master_ip && m.port == master_port
-                                        })
-                                }
-                                Err(_) => false,
-                            }
-                        })
+                    if let Ok((master_ip, master_port)) =
+                        try_find_client_by_id(&clients, &self.master.device_id)
+                            .map(|m| m.ip_and_port())
                     {
-                        State::Configure
+                        let master = try_find_facts_by_id(&facts, &self.master.device_id)?;
+                        if master.group_status.zone_slave.is_empty() // Must not be part of a fixed zone group
+                            && self.slaves.len() == master.group_status.slave.len()
+                            && self.slaves.iter().all(|s| {
+                                match try_find_facts_by_id(&facts, &s.device_id) {
+                                    Ok(f) => {
+                                        f.group_status.am_i_slave()
+                                            && f.group_status.master.as_ref().is_some_and(|m| {
+                                                m.ip_addr == master_ip && m.port == master_port
+                                            })
+                                    }
+                                    Err(_) => false,
+                                }
+                            })
+                        {
+                            // Group is already correct, skip grouping step
+                            State::Configure
+                        } else {
+                            // Group is incorrect, try and ungroup devices
+                            State::UngroupSlaves
+                        }
                     } else {
+                        // Master not found, try and ungroup devices
                         State::UngroupSlaves
                     }
                 }
@@ -274,9 +281,9 @@ impl GroupProfile {
                             .await?;
                     }
 
-                    State::WaitForUngroup
+                    State::WaitForDevices
                 }
-                State::WaitForUngroup => {
+                State::WaitForDevices => {
                     let not_found: Vec<_> = self
                         .slaves
                         .iter()
@@ -296,7 +303,7 @@ impl GroupProfile {
                         );
 
                         sleep(Duration::from_secs(1)).await;
-                        State::WaitForUngroup
+                        State::WaitForDevices
                     }
                 }
                 State::Group => {
@@ -312,7 +319,7 @@ impl GroupProfile {
 
                     // Add slaves to the master node
                     try_find_client_by_id(&clients, &self.master.device_id)?
-                        .add_slaves(&endpoints_to_add)
+                        .add_slaves(&endpoints_to_add, ZoneMode::Group { group_name: None })
                         .await?;
 
                     State::Wait {

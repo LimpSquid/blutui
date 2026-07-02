@@ -111,6 +111,60 @@ pub struct AudioPresetUrl {
     pub url: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, strum_macros::Display)]
+#[serde(rename_all = "snake_case")]
+pub enum ZoneChannel {
+    // Soundbar, powernode, etc
+    Front,
+    // Sattelite speaker like pulse flex, pulse m
+    Left,
+    // Sattelite speaker like pulse flex, pulse m
+    Right,
+    // Sattelite speaker like pulse flex, pulse m
+    SideLeft,
+    // Sattelite speaker like pulse flex, pulse m
+    SideRight,
+    // Powernode, etc
+    Side,
+    #[serde(other)]
+    Unknown,
+}
+
+impl ZoneChannel {
+    pub fn can_be_master(&self) -> bool {
+        matches!(self, Self::Front)
+    }
+
+    pub fn can_be_slave(&self) -> bool {
+        matches!(
+            self,
+            Self::Left | Self::Right | Self::SideLeft | Self::SideRight | Self::Front
+        )
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceZoneOption {
+    #[serde(rename = "$text")]
+    pub channel: ZoneChannel,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceZoneOptions {
+    #[serde(default)]
+    pub option: Vec<DeviceZoneOption>,
+}
+
+impl DeviceZoneOptions {
+    pub fn is_master_capable(&self) -> bool {
+        self.option.iter().any(|o| o.channel.can_be_master())
+    }
+
+    pub fn is_slave_capable(&self) -> bool {
+        self.option.iter().any(|o| o.channel.can_be_slave())
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceGroupStatus {
     #[serde(rename = "@etag")]
@@ -119,6 +173,8 @@ pub struct DeviceGroupStatus {
     pub brand: Option<String>,
     #[serde(rename = "@model")]
     pub model: String,
+    #[serde(rename = "@name")]
+    pub name: Option<String>,
     #[serde(rename = "@mac")]
     pub mac_address: Option<String>,
     pub master: Option<DeviceGroupMaster>,
@@ -130,6 +186,8 @@ pub struct DeviceGroupStatus {
     pub id: (IpAddr, u16),
     #[serde(rename = "audioPresetUrl")]
     pub audio_preset_url: Option<AudioPresetUrl>,
+    #[serde(rename = "zoneOptions")]
+    pub zone_options: Option<DeviceZoneOptions>,
 }
 
 impl DeviceGroupStatus {

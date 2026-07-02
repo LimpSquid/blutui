@@ -9,3 +9,6 @@ pub use protocol::{
     DeviceAudioPreset, DeviceDiagnostics, DeviceGroupStatus, DeviceInputSelection,
     DeviceInputSelectionItem, DeviceState, DeviceStatus, DeviceVolume,
 };
+
+pub const MAX_VOLUME_LEVEL: u8 = 100;
+pub const MIN_VOLUME_LEVEL: u8 = 0;

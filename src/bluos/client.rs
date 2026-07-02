@@ -10,14 +10,14 @@ use crate::discover::Device;
 
 use super::protocol::*;
 
-// In seconds
-const DEFAULT_POLL_TIMEOUT: u8 = 60;
-// In seconds
-const POLL_GRACE_PERIOD: u64 = 2;
-// In seconds
-const REQUEST_TIMEOUT: u64 = 3;
-// In seconds
-const REQUEST_TIMEOUT_LONG: u64 = 5;
+/// The long-polling timeout passed to the BluOS device
+const DEFAULT_POLL_TIMEOUT: u8 = 60; // In seconds
+/// The timeout grace period of our HTTP client
+const POLL_GRACE_PERIOD: u64 = 2; // In seconds
+/// The default request timeout if not long-polling
+const REQUEST_TIMEOUT: u64 = 5; // In seconds
+/// The timeout for the add slaves request
+const REQUEST_TIMEOUT_ADD_SLAVES: u64 = 60; // In seconds
 const DEFAULT_DEVICE_PORT: u16 = 11000;
 
 trait RequestBuilderExt {
@@ -50,6 +50,12 @@ impl PollOpts {
             timeout: DEFAULT_POLL_TIMEOUT,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum ZoneMode {
+    Group { group_name: Option<String> },
+    MultiplayerGroup { group_name: Option<String> },
 }
 
 #[derive(Clone)]
@@ -173,7 +179,7 @@ impl HttpClient {
             .client
             .get(self.api_path("RadioBrowse")?)
             .query(&[("service", "Capture")])
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_LONG))
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
             .text()
@@ -249,7 +255,8 @@ impl HttpClient {
             .form(&[("ledbrightness", brightness.to_string())])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -260,7 +267,8 @@ impl HttpClient {
             .form(&[("nodename", name)])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -310,7 +318,8 @@ impl HttpClient {
             .query(&[("id", preset_id)])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -323,7 +332,8 @@ impl HttpClient {
             })?)
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -333,7 +343,8 @@ impl HttpClient {
             .get(self.api_path("Pause")?)
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -343,7 +354,8 @@ impl HttpClient {
             .get(self.api_path("Stop")?)
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -353,7 +365,8 @@ impl HttpClient {
             .get(self.api_path("Skip")?)
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -363,7 +376,8 @@ impl HttpClient {
             .get(self.api_path("Back")?)
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -371,29 +385,41 @@ impl HttpClient {
     pub async fn add_slaves(
         &self,
         endpoints: &[(IpAddr, u16)],
-    ) -> anyhow::Result<Vec<DeviceGroupSlave>> {
+        mode: ZoneMode,
+    ) -> anyhow::Result<()> {
         anyhow::ensure!(!endpoints.is_empty(), "no endpoints provided");
 
-        let response = self
-            .client
+        let mut query = vec![
+            ("slaves", endpoints.iter().map(|(ip, _)| ip).join(",")),
+            ("ports", endpoints.iter().map(|(_, port)| port).join(",")),
+        ];
+        match mode {
+            ZoneMode::Group { group_name } => {
+                if let Some(group_name) = group_name {
+                    query.push(("group", group_name));
+                }
+            }
+            ZoneMode::MultiplayerGroup { group_name } => {
+                query.push(("channelMode", "default".to_string()));
+                query.push((
+                    "slaveChannelMode",
+                    endpoints.iter().map(|_| "default").join(","),
+                ));
+                if let Some(group_name) = group_name {
+                    query.push(("group", group_name));
+                }
+            }
+        }
+
+        self.client
             .get(self.api_path("AddSlave")?)
-            .query(&[
-                ("slaves", endpoints.iter().map(|(ip, _)| ip).join(",")),
-                ("ports", endpoints.iter().map(|(_, port)| port).join(",")),
-            ])
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .query(&query)
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT_ADD_SLAVES))
             .send()
             .await?
-            .text()
-            .await?;
+            .error_for_status()?;
 
-        #[derive(serde::Deserialize)]
-        struct ListResponse {
-            slave: Vec<DeviceGroupSlave>,
-        }
-        let response: ListResponse = quick_xml::de::from_str(&response)?;
-
-        Ok(response.slave)
+        Ok(())
     }
 
     pub async fn remove_slaves(

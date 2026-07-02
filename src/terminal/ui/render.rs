@@ -9,13 +9,13 @@ use ratatui::symbols::merge::MergeStrategy;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::canvas::Canvas;
 use ratatui::widgets::{
-    Block, BorderType, List, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-    Tabs, Wrap,
+    Bar, BarChart, Block, BorderType, List, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+    ScrollbarState, Tabs, Wrap,
 };
 use strum::IntoEnumIterator;
 
 use super::{Ui, components::*, stylesheet::*, utils::*};
-use crate::bluos::DeviceInputSelectionItem;
+use crate::bluos::MAX_VOLUME_LEVEL;
 use crate::terminal::app::{AppState, DeviceState};
 
 struct RenderContext<'a, 'b> {
@@ -72,6 +72,7 @@ impl From<usize> for WindowFocus {
 pub enum Tab {
     #[default]
     Profiles,
+    Audio,
     #[cfg(feature = "ui-enable-logs")]
     Logs,
 }
@@ -198,7 +199,6 @@ fn render_keybindings(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         ],
         WindowFocus::Tabs => vec![
             ("SPACEBAR", "Change Focus"),
-            ("🡳/🡱", "Selection"),
             ("TAB", "Change Tab"),
             ("q", "Quit"),
         ],
@@ -266,7 +266,7 @@ fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect)
                     format!(" ({device_model})").fg(ctx.ui.stylesheet.text_color_sub),
                     if let Some((group_color, am_i_master)) = group_status
                         .as_ref()
-                        .and_then(|s| Some((uuid_to_color(s.group_id()?.into()), s.am_i_master())))
+                        .and_then(|s| Some((uuid_to_color(s.group_id()?), s.am_i_master())))
                     {
                         if am_i_master { " ★" } else { " ●" }.fg(group_color)
                     } else {
@@ -360,9 +360,7 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     (None, None) => "N/A".to_string(),
                 }),
         ));
-        if let Some(audio_preset_value) =
-            audio_preset.as_ref().map(|p| p.value.to_ascii_lowercase())
-        {
+        if let Some(audio_preset_value) = audio_preset.as_ref().map(|p| p.value.to_lowercase()) {
             data.push(("audio preset".to_string(), Some(audio_preset_value)));
         }
         if let Some(input_selection) = input_selection
@@ -370,17 +368,34 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         {
             data.push((
                 if input_selection.item.len() > 1 {
-                    "avail. inputs"
+                    "avail inputs"
                 } else {
-                    "avail. input "
+                    "avail input "
                 }
                 .to_string(),
                 Some(
                     input_selection
                         .item
                         .iter()
-                        .map(|DeviceInputSelectionItem { text, .. }| text.to_ascii_lowercase())
+                        .map(|i| i.text.to_lowercase())
                         .join(", "),
+                ),
+            ));
+        }
+        if let Some(zone_options) = group_status.as_ref().and_then(|s| s.zone_options.as_ref()) {
+            data.push((
+                "capabilities".to_string(),
+                Some(
+                    match (
+                        zone_options.is_master_capable(),
+                        zone_options.is_slave_capable(),
+                    ) {
+                        (true, true) => "primary or secondary player",
+                        (true, false) => "primary player",
+                        (false, true) => "secondary player",
+                        (false, false) => "cannot be grouped in a zone",
+                    }
+                    .to_string(),
                 ),
             ));
         }
@@ -493,6 +508,7 @@ fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 
     match ctx.ui.selected_tab {
         Tab::Profiles => render_profiles_tab(ctx, layout[1]),
+        Tab::Audio => render_audio_tab(ctx, layout[1]),
         #[cfg(feature = "ui-enable-logs")]
         Tab::Logs => render_logs_tab(ctx, layout[1]),
     }
@@ -574,6 +590,45 @@ fn render_profiles_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         );
         ctx.frame
             .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+    }
+}
+
+fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
+    let groupbox_area = render_groupbox(ctx, None, area, false);
+
+    if ctx.state.device_state.is_empty() {
+        let text = Line::from("Detecting devices... ⏳".fg(ctx.ui.stylesheet.accent_color));
+        let area = area.centered(
+            Constraint::Length(text.width() as u16),
+            Constraint::Length(1),
+        );
+        ctx.frame
+            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+    } else {
+        let volume_chart = BarChart::vertical(
+            ctx.state
+                .sorted_device_state_iter()
+                .map(|(device_id, device)| {
+                    (
+                        device_id,
+                        device
+                            .volume
+                            .as_ref()
+                            .and_then(|v| v.volume.try_into().ok())
+                            .unwrap_or_default(),
+                    )
+                })
+                .map(|(device_id, volume)| {
+                    let _is_selected = ctx.ui.selected_device.is_some_and(|id| *device_id == id);
+                    Bar::new(volume).fg(uuid_to_color(*device_id)).bold()
+                })
+                .collect::<Vec<_>>(),
+        )
+        .bar_width(4)
+        .bar_gap(1)
+        .max(MAX_VOLUME_LEVEL.into());
+
+        ctx.frame.render_widget(volume_chart, groupbox_area);
     }
 }
 

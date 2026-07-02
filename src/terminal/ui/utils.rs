@@ -64,7 +64,8 @@ where
     iter.into_iter().rev().map(map).next()
 }
 
-pub fn uuid_to_color(uuid: Uuid) -> Color {
+pub fn uuid_to_color<UUID: Into<Uuid>>(uuid: UUID) -> Color {
+    let uuid: Uuid = uuid.into();
     let bytes = uuid.as_bytes();
 
     let r = bytes[0] ^ bytes[8];

@@ -2,6 +2,7 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use super::super::protocol::LedBrightness;
+use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
 use super::common::*;
 use crate::types::DeviceId;
 
@@ -26,8 +27,8 @@ pub struct DeviceProfile {
 impl DeviceProfile {
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            (0..=100).contains(&self.volume_level.unwrap_or(0)),
-            "invalid volume level (allowed: 0 - 100)"
+            (MIN_VOLUME_LEVEL..=MAX_VOLUME_LEVEL).contains(&self.volume_level.unwrap_or(0)),
+            "invalid volume level (allowed: {MIN_VOLUME_LEVEL} - {MAX_VOLUME_LEVEL})"
         );
 
         if let Some(node_name) = self.node_name.as_deref() {
