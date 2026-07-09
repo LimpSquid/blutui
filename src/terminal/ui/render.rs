@@ -71,7 +71,7 @@ impl From<usize> for WindowFocus {
 #[strum(serialize_all = "lowercase")]
 pub enum Tab {
     #[default]
-    Profiles,
+    Profile,
     Audio,
     #[cfg(feature = "ui-enable-logs")]
     Logs,
@@ -187,7 +187,7 @@ fn render_keybindings(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             ),
             ("q", "Quit"),
         ],
-        WindowFocus::Tabs if ctx.ui.selected_tab == Tab::Profiles => vec![
+        WindowFocus::Tabs if ctx.ui.selected_tab == Tab::Profile => vec![
             ("SPACEBAR", "Change Focus"),
             ("🡳/🡱/HOME/END", "Selection"),
             ("n", "New"),
@@ -264,11 +264,20 @@ fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect)
                 vec![Line::from(vec![
                     format!("{device_name}").fg(ctx.ui.stylesheet.text_color),
                     format!(" ({device_model})").fg(ctx.ui.stylesheet.text_color_sub),
-                    if let Some((group_color, am_i_master)) = group_status
+                    if let Some((group_color, group_status)) = group_status
                         .as_ref()
-                        .and_then(|s| Some((uuid_to_color(s.group_id()?), s.am_i_master())))
+                        .and_then(|s| Some((uuid_to_color(s.group_id()?), s)))
                     {
-                        if am_i_master { " ★" } else { " ●" }.fg(group_color)
+                        if group_status.am_i_master() {
+                            format!(" {MASTER_SYMBOL}")
+                        } else if group_status.am_i_zone_slave() {
+                            format!(" {ZONE_SLAVE_SYMBOL}")
+                        } else if group_status.am_i_slave() {
+                            format!(" {SLAVE_SYMBOL}")
+                        } else {
+                            "".to_string()
+                        }
+                        .fg(group_color)
                     } else {
                         "".into()
                     },
@@ -478,7 +487,11 @@ fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     let highlight = ctx.ui.window_focus == WindowFocus::Tabs;
     let layout = Layout::new(
         Direction::Vertical,
-        [Constraint::Length(3), Constraint::Fill(1)],
+        [
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Fill(1),
+        ],
     )
     .spacing(Spacing::Overlap(1))
     .split(area);
@@ -505,16 +518,17 @@ fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 .bold(),
         );
     ctx.frame.render_widget(tabs, layout[0]);
+    render_groupbox(ctx, None, layout[1], false);
 
     match ctx.ui.selected_tab {
-        Tab::Profiles => render_profiles_tab(ctx, layout[1]),
-        Tab::Audio => render_audio_tab(ctx, layout[1]),
+        Tab::Profile => render_profile_tab(ctx, layout[2]),
+        Tab::Audio => render_audio_tab(ctx, layout[2]),
         #[cfg(feature = "ui-enable-logs")]
-        Tab::Logs => render_logs_tab(ctx, layout[1]),
+        Tab::Logs => render_logs_tab(ctx, layout[2]),
     }
 }
 
-fn render_profiles_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
+fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     let layout = Layout::new(
         Direction::Horizontal,
         [Constraint::Percentage(35), Constraint::Fill(1)],
@@ -522,8 +536,8 @@ fn render_profiles_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     .spacing(Spacing::Overlap(1))
     .split(area);
 
-    let list_area = render_groupbox(ctx, None, layout[0], false);
-    let profile_area = render_groupbox(ctx, None, layout[1], false);
+    let list_area = render_groupbox(ctx, Some("profiles"), layout[0], false);
+    let profile_area = render_groupbox(ctx, Some("profile details"), layout[1], false);
 
     let mut selected = None;
     let mut profile_in_yaml_or_err = None;
@@ -594,7 +608,7 @@ fn render_profiles_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 }
 
 fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
-    let groupbox_area = render_groupbox(ctx, None, area, false);
+    render_groupbox(ctx, None, area, false);
 
     if ctx.state.device_state.is_empty() {
         let text = Line::from("Detecting devices... ⏳".fg(ctx.ui.stylesheet.accent_color));
@@ -605,30 +619,33 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         ctx.frame
             .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
     } else {
-        let volume_chart = BarChart::vertical(
+        let [volume_area, other_area] = area.layout(
+            &Layout::new(
+                Direction::Horizontal,
+                [Constraint::Percentage(50), Constraint::Fill(1)],
+            )
+            .spacing(Spacing::Overlap(1)),
+        );
+        let volume_area = render_groupbox(ctx, Some("volume"), volume_area, false);
+        let _other_area = render_groupbox(ctx, Some("other"), other_area, false);
+
+        let volume_chart = BarChart::horizontal(
             ctx.state
                 .sorted_device_state_iter()
-                .map(|(device_id, device)| {
-                    (
-                        device_id,
-                        device
-                            .volume
-                            .as_ref()
-                            .and_then(|v| v.volume.try_into().ok())
-                            .unwrap_or_default(),
-                    )
-                })
-                .map(|(device_id, volume)| {
-                    let _is_selected = ctx.ui.selected_device.is_some_and(|id| *device_id == id);
-                    Bar::new(volume).fg(uuid_to_color(*device_id)).bold()
+                .map(|(device_id, device)| match device.volume.as_ref() {
+                    Some(volume) => {
+                        Bar::with_label(format!("{:.1} db", volume.db), volume.volume as u64)
+                            .fg(uuid_to_color(*device_id))
+                    }
+                    None => Bar::new(0),
                 })
                 .collect::<Vec<_>>(),
         )
-        .bar_width(4)
-        .bar_gap(1)
+        .bar_width(3)
+        .bar_gap(0)
         .max(MAX_VOLUME_LEVEL.into());
 
-        ctx.frame.render_widget(volume_chart, groupbox_area);
+        ctx.frame.render_widget(volume_chart, volume_area);
     }
 }
 
@@ -660,19 +677,22 @@ fn render_groupbox(
         .merge_borders(MergeStrategy::Fuzzy)
         .border_style(Style::default().fg(ctx.ui.stylesheet.border_color));
 
-    if highlight {
-        groupbox = groupbox.title(Line::from(vec![
-            format!(" {HIGHLIGHT_SYMBOL} ").fg(ctx.ui.stylesheet.highlight_color),
-        ]))
-    }
     if let Some(title) = title {
         groupbox = groupbox
             .title(Line::from(vec![
-                "| ".fg(ctx.ui.stylesheet.border_color),
+                "─ ".fg(ctx.ui.stylesheet.border_color),
                 title.fg(ctx.ui.stylesheet.accent_color),
-                " |".fg(ctx.ui.stylesheet.border_color),
+                if highlight {
+                    format!(" {HIGHLIGHT_SYMBOL} ").fg(ctx.ui.stylesheet.highlight_color)
+                } else {
+                    " ".fg(ctx.ui.stylesheet.border_color)
+                },
             ]))
             .title_alignment(Alignment::Left)
+    } else if highlight {
+        groupbox = groupbox.title(Line::from(vec![
+            format!(" {HIGHLIGHT_SYMBOL} ").fg(ctx.ui.stylesheet.highlight_color),
+        ]))
     }
 
     ctx.frame.render_widget(groupbox, area);

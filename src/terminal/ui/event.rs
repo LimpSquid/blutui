@@ -76,39 +76,39 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     .into();
             }
 
-            (Tabs, KeyCode::Down) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::Down) if ui.selected_tab == Profile => {
                 ui.selected_profile = select_next(
                     state.sorted_profiles_iter(),
                     |(id, _)| id.to_owned(),
                     ui.selected_profile.clone(),
                 );
             }
-            (Tabs, KeyCode::Up) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::Up) if ui.selected_tab == Profile => {
                 ui.selected_profile = select_previous(
                     state.sorted_profiles_iter(),
                     |(id, _)| id.to_owned(),
                     ui.selected_profile.clone(),
                 );
             }
-            (Tabs, KeyCode::Home) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::Home) if ui.selected_tab == Profile => {
                 ui.selected_profile =
                     select_first(state.sorted_profiles_iter(), |(id, _)| id.to_owned());
             }
-            (Tabs, KeyCode::End) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::End) if ui.selected_tab == Profile => {
                 ui.selected_profile =
                     select_last(state.sorted_profiles_iter(), |(id, _)| id.to_owned());
             }
-            (Tabs, KeyCode::Enter) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::Enter) if ui.selected_tab == Profile => {
                 if !state.is_profile_transitioning
                     && let Some(profile_id) = ui.selected_profile.clone()
                 {
                     ui.action(UserAction::ApplyProfile(profile_id));
                 }
             }
-            (Tabs, KeyCode::Char('n' | 'N')) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::Char('n' | 'N')) if ui.selected_tab == Profile => {
                 ui.open_dialog(NewProfileDialog::new(ui.stylesheet));
             }
-            (Tabs, KeyCode::Char('d' | 'D')) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::Char('d' | 'D')) if ui.selected_tab == Profile => {
                 if let Some(profile) = ui
                     .selected_profile
                     .as_ref()
@@ -117,7 +117,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     ui.open_dialog(DeleteProfileDialog::new(profile.to_owned(), ui.stylesheet));
                 }
             }
-            (Tabs, KeyCode::Char('e' | 'E')) if ui.selected_tab == Profiles => {
+            (Tabs, KeyCode::Char('e' | 'E')) if ui.selected_tab == Profile => {
                 if !state.is_profile_transitioning
                     && let Some(profile_id) = ui.selected_profile.clone()
                 {

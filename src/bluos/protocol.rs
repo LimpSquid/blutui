@@ -195,6 +195,10 @@ impl DeviceGroupStatus {
         self.master.is_some()
     }
 
+    pub fn am_i_zone_slave(&self) -> bool {
+        self.am_i_slave() && self.zone_options.is_none()
+    }
+
     pub fn am_i_master(&self) -> bool {
         !self.slave.is_empty() || !self.zone_slave.is_empty()
     }
