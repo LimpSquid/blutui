@@ -17,6 +17,13 @@ use crate::event::{Event, EventBus};
 use crate::profman::{ProfileStorageManager, StoredProfile, create_profile};
 use crate::types::{DeviceId, GroupId, ProfileId};
 
+bitflags::bitflags! {
+    pub struct BusyFlags: u32 {
+        const PROFILE_TRANSITIONING = 1 << 0;
+        const DEVICE_CONTROLLER_BUSY = 1 << 1;
+    }
+}
+
 #[derive(Clone)]
 pub struct DeviceState {
     pub device: Device,
@@ -43,13 +50,24 @@ impl From<Device> for DeviceState {
     }
 }
 
-#[derive(Default)]
 pub struct AppState {
     pub device_state: HashMap<DeviceId, DeviceState>,
     pub profiles: HashMap<ProfileId, StoredProfile>,
-    pub is_profile_transitioning: bool,
+    pub busy_flags: BusyFlags,
     #[cfg(feature = "ui-enable-logs")]
     pub logs: std::collections::VecDeque<String>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            device_state: Default::default(),
+            profiles: Default::default(),
+            busy_flags: BusyFlags::empty(),
+            #[cfg(feature = "ui-enable-logs")]
+            logs: Default::default(),
+        }
+    }
 }
 
 impl AppState {
@@ -191,16 +209,28 @@ impl App {
                     .collect();
             }
             Event::ProfileTransitionStarted => {
-                self.state.is_profile_transitioning = true;
+                self.state
+                    .busy_flags
+                    .insert(BusyFlags::PROFILE_TRANSITIONING);
             }
             Event::ProfileTransitionCompleted(result) => {
-                self.state.is_profile_transitioning = false;
+                self.state
+                    .busy_flags
+                    .remove(BusyFlags::PROFILE_TRANSITIONING);
 
                 if let Err(error) = result.as_ref() {
                     tracing::error!(?error, "failed to apply profile");
                     self.ui.show_notification(format!("{error:?}"));
                 }
             }
+            Event::DeviceControllerBusy => self
+                .state
+                .busy_flags
+                .insert(BusyFlags::DEVICE_CONTROLLER_BUSY),
+            Event::DeviceControllerIdle => self
+                .state
+                .busy_flags
+                .remove(BusyFlags::DEVICE_CONTROLLER_BUSY),
             Event::DiscoveryAnnouncement(..) => {}
             #[cfg(feature = "ui-enable-logs")]
             Event::Logs(logs) => {

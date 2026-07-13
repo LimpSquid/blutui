@@ -17,6 +17,7 @@ fs-enable-logs = []
 [dependencies]
 anyhow = { version = "1" }
 ansi-to-tui = { version = "8", optional = true }
+bitflags = { version = "2" }
 chrono = { version = "0.4" }
 clap = { version = "4.4", features = [ "derive" ] }
 crossterm = { version = "*", features = [ "event-stream" ] }

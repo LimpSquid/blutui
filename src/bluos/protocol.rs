@@ -27,8 +27,9 @@ where
     Ok((ip, port))
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, PartialOrd, Ord, strum_macros::Display)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum DeviceState {
     Play,
     Pause,
@@ -52,8 +53,9 @@ pub struct DeviceStatus {
     pub volume: i32,
     pub db: f32,
     pub title1: Option<String>,
-    #[serde(default)]
     pub title2: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
     pub state: DeviceState,
     pub service: Option<String>,
 }
@@ -113,6 +115,7 @@ pub struct AudioPresetUrl {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, strum_macros::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "lowercase")]
 pub enum ZoneChannel {
     // Soundbar, powernode, etc
     Front,

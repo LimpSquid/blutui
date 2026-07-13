@@ -323,7 +323,7 @@ impl GroupProfile {
                         .await?;
 
                     State::Wait {
-                        duration: Duration::from_secs(1),
+                        duration: Duration::from_secs(5), // Give some time to settle
                         next_state: Box::new(State::Configure),
                     }
                 }

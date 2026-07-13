@@ -1,7 +1,7 @@
 use strum::EnumCount;
 
 use super::{Ui, UserAction, components::*, render::*, utils::*};
-use crate::terminal::app::AppState;
+use crate::terminal::app::{AppState, BusyFlags};
 
 #[derive(Debug, Clone, Copy)]
 pub enum KeyCode {
@@ -99,7 +99,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     select_last(state.sorted_profiles_iter(), |(id, _)| id.to_owned());
             }
             (Tabs, KeyCode::Enter) if ui.selected_tab == Profile => {
-                if !state.is_profile_transitioning
+                if !state.busy_flags.contains(BusyFlags::PROFILE_TRANSITIONING)
                     && let Some(profile_id) = ui.selected_profile.clone()
                 {
                     ui.action(UserAction::ApplyProfile(profile_id));
@@ -118,9 +118,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                 }
             }
             (Tabs, KeyCode::Char('e' | 'E')) if ui.selected_tab == Profile => {
-                if !state.is_profile_transitioning
-                    && let Some(profile_id) = ui.selected_profile.clone()
-                {
+                if let Some(profile_id) = ui.selected_profile.clone() {
                     ui.action(UserAction::EditProfile(profile_id));
                 }
             }

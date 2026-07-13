@@ -24,6 +24,8 @@ pub enum Event {
     DeviceDiagnosticsUpdated(DeviceId, DeviceDiagnostics),
     DeviceAudioPresetUpdated(DeviceId, DeviceAudioPreset),
     DeviceInputSelectionUpdated(DeviceId, DeviceInputSelection),
+    DeviceControllerBusy,
+    DeviceControllerIdle,
     ProfileTransitionStarted,
     ProfileTransitionCompleted(Arc<anyhow::Result<()>>),
     ProfilesLoaded(Vec<StoredProfile>),

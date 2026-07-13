@@ -104,12 +104,14 @@ async fn processor(
                     break 'main;
                 },
                  // Handle action requests
-                n_reqs = action.recv_many(&mut action_buf, 32) => match n_reqs {
+                n_reqs = action.recv_many(&mut action_buf, 128) => match n_reqs {
                     0 => {
                         tracing::debug!("action channel terminated");
                         break 'main;
                     }
                     _ => {
+                        event_bus.publish_lossy(Event::DeviceControllerBusy);
+
                         let tasks_to_poll = action_buf
                             .drain(..)
                             // Action requests are serialized per device but run concurrently across devices
@@ -136,6 +138,7 @@ async fn processor(
                             .unwrap_or_default()
                             .into_iter()
                             .flatten()
+                            .chain(std::iter::once(Event::DeviceControllerIdle))
                             .for_each(|e| event_bus.publish_lossy(e));
                     },
                 },

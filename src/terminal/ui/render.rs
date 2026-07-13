@@ -16,7 +16,7 @@ use strum::IntoEnumIterator;
 
 use super::{Ui, components::*, stylesheet::*, utils::*};
 use crate::bluos::MAX_VOLUME_LEVEL;
-use crate::terminal::app::{AppState, DeviceState};
+use crate::terminal::app::{AppState, BusyFlags, DeviceState};
 
 struct RenderContext<'a, 'b> {
     frame: &'a mut Frame<'b>,
@@ -155,7 +155,17 @@ pub fn render(frame: &mut Frame, state: &AppState, ui: &mut Ui) {
     render_device_details_window(&mut ctx, device_layout[1]);
     render_tabs_window(&mut ctx, body_layout[1]);
     render_keybindings(&mut ctx, footer);
+    render_busy_indicator(&mut ctx, canvas_area);
     render_dialog(&mut ctx, canvas_area);
+}
+
+fn render_busy_indicator(ctx: &mut RenderContext<'_, '_>, area: Rect) {
+    if !ctx.state.busy_flags.is_empty() {
+        ctx.frame.render_widget(
+            Span::from("●".fg(ctx.ui.stylesheet.highlight_color)),
+            Rect::new(area.width.max(1) - 1, area.height.max(1) - 1, 1, 1),
+        );
+    }
 }
 
 #[tracing::instrument(skip_all)]
@@ -354,7 +364,7 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         data.push((
             "service".to_string(),
             status.as_ref().map(|s| match s.service.as_ref() {
-                Some(service) => format!("{} ({:?})", service, s.state),
+                Some(service) => format!("{} ({})", service, s.state,),
                 None => "N/A".to_string(),
             }),
         ));
@@ -365,23 +375,22 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 .map(|s| match (s.title1.as_ref(), s.title2.as_ref()) {
                     (Some(t1), Some(t2)) => format!("{t1} • {t2}"),
                     (Some(t1), None) => format!("{t1}"),
-                    (None, Some(t2)) => format!("{t2}"),
+                    (None, Some(a)) => format!("{a}"),
                     (None, None) => "N/A".to_string(),
                 }),
         ));
-        if let Some(audio_preset_value) = audio_preset.as_ref().map(|p| p.value.to_lowercase()) {
-            data.push(("audio preset".to_string(), Some(audio_preset_value)));
-        }
+        data.push((
+            "album".to_string(),
+            status.as_ref().map(|s| match s.album.as_ref() {
+                Some(a) => a.to_owned(),
+                None => "N/A".to_string(),
+            }),
+        ));
         if let Some(input_selection) = input_selection
             && !input_selection.item.is_empty()
         {
             data.push((
-                if input_selection.item.len() > 1 {
-                    "avail inputs"
-                } else {
-                    "avail input "
-                }
-                .to_string(),
+                "input source".to_string(),
                 Some(
                     input_selection
                         .item
@@ -407,6 +416,9 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     .to_string(),
                 ),
             ));
+        }
+        if let Some(audio_preset_value) = audio_preset.as_ref().map(|p| p.value.to_lowercase()) {
+            data.push(("audio preset".to_string(), Some(audio_preset_value)));
         }
 
         let data_key_max_len = data
@@ -577,13 +589,27 @@ fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         .collect::<List>()
         .highlight_style(Style::new().bg(ctx.ui.stylesheet.accent_color_dark).bold());
 
-    ctx.frame.render_stateful_widget(
-        list,
-        list_area,
-        &mut ListState::default().with_selected(selected),
-    );
+    if list.is_empty() {
+        let text = Line::from("No profiles.".fg(ctx.ui.stylesheet.accent_color));
+        let area = list_area.centered(
+            Constraint::Length(text.width() as u16),
+            Constraint::Length(1),
+        );
+        ctx.frame
+            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+    } else {
+        ctx.frame.render_stateful_widget(
+            list,
+            list_area,
+            &mut ListState::default().with_selected(selected),
+        );
+    }
 
-    if ctx.state.is_profile_transitioning {
+    if ctx
+        .state
+        .busy_flags
+        .contains(BusyFlags::PROFILE_TRANSITIONING)
+    {
         let text = "Applying profile... ⏳".fg(ctx.ui.stylesheet.accent_color);
         let area = profile_area.centered(
             Constraint::Length(text.width() as u16),
@@ -627,7 +653,7 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             .spacing(Spacing::Overlap(1)),
         );
         let volume_area = render_groupbox(ctx, Some("volume"), volume_area, false);
-        let _other_area = render_groupbox(ctx, Some("other"), other_area, false);
+        let _other_area = render_groupbox(ctx, Some("TODO"), other_area, false);
 
         let volume_chart = BarChart::horizontal(
             ctx.state
