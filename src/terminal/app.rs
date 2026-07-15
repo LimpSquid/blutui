@@ -8,8 +8,8 @@ use tracing_subscriber::prelude::*;
 
 use super::ui::{Ui, UserAction};
 use crate::bluos::{
-    DeviceAudioPreset, DeviceController, DeviceDiagnostics, DeviceGroupStatus,
-    DeviceInputSelection, DeviceStatus, DeviceVolume, ProfileController,
+    DeviceAudioSettings, DeviceController, DeviceDiagnostics, DeviceGroupStatus,
+    DeviceInputSelection, DevicePlayerSettings, DeviceStatus, DeviceVolume, ProfileController,
 };
 use crate::discover::{Device, DeviceDiscovery};
 use crate::editor::open_external_editor;
@@ -31,9 +31,9 @@ pub struct DeviceState {
     pub volume: Option<DeviceVolume>,
     pub group_status: Option<DeviceGroupStatus>,
     pub diagnostics: Option<DeviceDiagnostics>,
-    // NB: only available for specific devices
-    pub audio_preset: Option<DeviceAudioPreset>,
     pub input_selection: Option<DeviceInputSelection>,
+    pub audio_settings: Option<DeviceAudioSettings>,
+    pub player_settings: Option<DevicePlayerSettings>,
 }
 
 impl From<Device> for DeviceState {
@@ -44,8 +44,9 @@ impl From<Device> for DeviceState {
             volume: None,
             group_status: None,
             diagnostics: None,
-            audio_preset: None,
             input_selection: None,
+            audio_settings: None,
+            player_settings: None,
         }
     }
 }
@@ -173,6 +174,7 @@ impl App {
                 self.state.device_state.remove(&device.id);
             }
             Event::DeviceStatusUpdated(id, value) => {
+                self.device_controller.poll(id).await?;
                 if let Some(state) = self.state.device_state.get_mut(&id) {
                     state.status = Some(value);
                 }
@@ -187,19 +189,18 @@ impl App {
                     state.group_status = Some(value);
                 }
             }
-            Event::DeviceDiagnosticsUpdated(id, value) => {
+            Event::DevicePolled(
+                id,
+                diagnostics,
+                input_selection,
+                audio_settings,
+                player_settings,
+            ) => {
                 if let Some(state) = self.state.device_state.get_mut(&id) {
-                    state.diagnostics = Some(value);
-                }
-            }
-            Event::DeviceAudioPresetUpdated(id, value) => {
-                if let Some(state) = self.state.device_state.get_mut(&id) {
-                    state.audio_preset = Some(value);
-                }
-            }
-            Event::DeviceInputSelectionUpdated(id, value) => {
-                if let Some(state) = self.state.device_state.get_mut(&id) {
-                    state.input_selection = Some(value);
+                    state.diagnostics = Some(diagnostics);
+                    state.input_selection = Some(input_selection);
+                    state.audio_settings = Some(audio_settings);
+                    state.player_settings = Some(player_settings);
                 }
             }
             Event::ProfilesLoaded(profiles) => {
@@ -217,6 +218,9 @@ impl App {
                 self.state
                     .busy_flags
                     .remove(BusyFlags::PROFILE_TRANSITIONING);
+                self.device_controller
+                    .poll_many(self.state.device_state.keys().copied())
+                    .await?;
 
                 if let Err(error) = result.as_ref() {
                     tracing::error!(?error, "failed to apply profile");
@@ -252,9 +256,9 @@ impl App {
         match action {
             UserAction::RefreshDevices => {
                 self.device_discovery.refresh_all().await?;
-                for (device_id, _) in self.state.device_state.iter() {
-                    self.device_controller.poll(*device_id).await?;
-                }
+                self.device_controller
+                    .poll_many(self.state.device_state.keys().copied())
+                    .await?;
             }
             UserAction::DeviceVolumeUp(device_id) => {
                 self.device_controller.volume_up(device_id, false).await?;

@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, de};
-use strum_macros::Display;
+use strum_macros::{Display, EnumString};
 
 use crate::serde::number::StrU16;
 use crate::types::GroupId;
@@ -226,49 +226,6 @@ pub struct DeviceDiagnostics {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct DeviceAudioPresetValue {
-    #[serde(rename = "@displayName")]
-    pub display_name: String,
-    #[serde(rename = "@name")]
-    pub name: String,
-    #[serde(rename = "@icon")]
-    pub icon: Option<String>,
-    #[serde(rename = "@iconActive")]
-    pub icon_active: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DeviceAudioPreset {
-    #[serde(rename = "@displayName")]
-    pub display_name: String,
-    #[serde(rename = "@name")]
-    pub name: String,
-    #[serde(rename = "@class")]
-    pub class: Option<String>,
-    #[serde(rename = "@url")]
-    pub url: String,
-    #[serde(rename = "@value")]
-    pub value: String,
-    #[serde(rename = "value", default)]
-    pub values: Vec<DeviceAudioPresetValue>,
-}
-
-impl DeviceAudioPreset {
-    pub fn find_preset(&self, selection: &str) -> Option<&DeviceAudioPresetValue> {
-        self.values
-            .iter()
-            .find(|v| v.display_name.eq_ignore_ascii_case(selection))
-    }
-
-    pub fn list_presets(&self) -> String {
-        self.values
-            .iter()
-            .map(|i| i.display_name.to_ascii_lowercase())
-            .join(", ")
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct DeviceInputSelection {
     #[serde(default)]
     pub item: Vec<DeviceInputSelectionItem>,
@@ -297,8 +254,31 @@ pub struct DeviceInputSelectionItem {
     pub url: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct DeviceAudioSettings {
+    /// NB: Only available on specific devices
+    pub audio_preset: Option<AudioPreset>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DevicePlayerSettings {
+    /// NB: Only available on specific devices
+    pub led_brightness: Option<LedBrightness>,
+}
+
 #[derive(
-    Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Display,
+    Debug,
+    Clone,
+    Copy,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Deserialize,
+    Serialize,
+    Display,
+    EnumString,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -306,4 +286,67 @@ pub enum LedBrightness {
     Default,
     Dim,
     Off,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Deserialize,
+    Serialize,
+    Display,
+    EnumString,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum AudioPreset {
+    Off,
+    Music,
+    Movie,
+    Night,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceSettings {
+    #[serde(rename = "menuGroup")]
+    pub menu_group: DeviceMenuGroup,
+}
+
+impl DeviceSettings {
+    pub fn find(&self, setting_id: &str) -> Option<&DeviceSetting> {
+        self.menu_group.setting.iter().find(|s| s.id == setting_id)
+    }
+
+    pub fn find_and_then<R>(
+        &self,
+        setting_id: &str,
+        f: impl FnOnce(&DeviceSetting) -> Option<R>,
+    ) -> Option<R> {
+        self.find(setting_id).and_then(f)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceMenuGroup {
+    // This requires `overlapped-lists` on quick_xml
+    // https://docs.rs/quick-xml/latest/quick_xml/#overlapped-lists
+    #[serde(default)]
+    pub setting: Vec<DeviceSetting>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeviceSetting {
+    #[serde(rename = "@id")]
+    pub id: String,
+    #[serde(rename = "@value")]
+    pub value: Option<String>,
 }

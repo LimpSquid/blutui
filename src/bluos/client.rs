@@ -104,6 +104,7 @@ impl HttpClient {
             .poll_opts(poll_opts)
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let device_status = quick_xml::de::from_str(&response)?;
@@ -121,6 +122,7 @@ impl HttpClient {
             .poll_opts(poll_opts)
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let group_status = quick_xml::de::from_str(&response)?;
@@ -135,6 +137,7 @@ impl HttpClient {
             .poll_opts(poll_opts)
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let device_volume = quick_xml::de::from_str(&response)?;
@@ -149,6 +152,7 @@ impl HttpClient {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let html = Html::parse_document(&response);
@@ -182,6 +186,7 @@ impl HttpClient {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let input_selection = quick_xml::de::from_str(&response)?;
@@ -189,40 +194,59 @@ impl HttpClient {
         Ok(input_selection)
     }
 
-    pub async fn get_audio_preset(&self, endpoint: &str) -> anyhow::Result<DeviceAudioPreset> {
-        anyhow::ensure!(!endpoint.is_empty(), "endpoint cannot be empty");
-
+    pub async fn get_audio_settings(&self) -> anyhow::Result<DeviceAudioSettings> {
         let response = self
             .client
-            .get(self.api_path(endpoint.strip_prefix("/").unwrap_or(endpoint))?)
+            .get(self.api_path("Settings")?)
+            .query(&[("id", "audio")])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
-        let device_audio_preset = quick_xml::de::from_str(&response)?;
+        let settings: DeviceSettings = quick_xml::de::from_str(&response)?;
+        let audio_settings = DeviceAudioSettings {
+            audio_preset: settings
+                .find_and_then("preset", |s| s.value.as_ref().and_then(|v| v.parse().ok())),
+        };
 
-        Ok(device_audio_preset)
+        Ok(audio_settings)
     }
 
-    pub async fn set_audio_preset(
-        &self,
-        setting_name: &str,
-        setting_value: &str,
-        endpoint: &str,
-    ) -> anyhow::Result<()> {
-        anyhow::ensure!(!setting_name.is_empty(), "setting name cannot be empty");
-        anyhow::ensure!(!setting_value.is_empty(), "setting value cannot be empty");
-        anyhow::ensure!(!endpoint.is_empty(), "endpoint cannot be empty");
-
-        self.client
-            .post(self.api_path(endpoint.strip_prefix("/").unwrap_or(endpoint))?)
-            .form(&[(setting_name, setting_value)])
+    pub async fn get_player_settings(&self) -> anyhow::Result<DevicePlayerSettings> {
+        let response = self
+            .client
+            .get(self.api_path("Settings")?)
+            .query(&[("id", "player")])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
+        let settings: DeviceSettings = quick_xml::de::from_str(&response)?;
+        let player_settings = DevicePlayerSettings {
+            led_brightness: settings.find_and_then("ledbrightness", |s| {
+                s.value.as_ref().and_then(|v| v.parse().ok())
+            }),
+        };
+
+        Ok(player_settings)
+    }
+
+    pub async fn set_audio_preset(&self, preset: AudioPreset) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            preset != AudioPreset::Unknown,
+            "unknown audio preset not supported"
+        );
+        self.client
+            .post(self.api_path("alsa_setting")?)
+            .form(&[("preset", preset.to_string())])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
 
         Ok(())
     }
@@ -242,6 +266,7 @@ impl HttpClient {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let device_volume = quick_xml::de::from_str(&response)?;
@@ -250,6 +275,10 @@ impl HttpClient {
     }
 
     pub async fn set_led_brightness(&self, brightness: LedBrightness) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            brightness != LedBrightness::Unknown,
+            "unknown led brightness not supported"
+        );
         self.client
             .post(self.api_path("setting")?)
             .form(&[("ledbrightness", brightness.to_string())])
@@ -288,6 +317,7 @@ impl HttpClient {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let device_volume = quick_xml::de::from_str(&response)?;
@@ -303,6 +333,7 @@ impl HttpClient {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
         let device_volume = quick_xml::de::from_str(&response)?;
@@ -438,6 +469,7 @@ impl HttpClient {
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?
+            .error_for_status()?
             .text()
             .await?;
 

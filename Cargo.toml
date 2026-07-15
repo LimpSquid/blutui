@@ -2,10 +2,15 @@
 name = "blutui"
 version = "0.1.0"
 edition = "2024"
+default-run = "blutui"
 
 [[bin]]
 name = "blutui"
 path = "src/bin/tui.rs"
+
+[[bin]]
+name = "settings_crawler"
+path = "src/bin/settings_crawler.rs"
 
 [profile.release]
 opt-level = "z"
@@ -25,7 +30,7 @@ futures = { version = "0.3" }
 itertools = { version = "0.14" }
 netdev = { version = "0.42" }
 notify = { version = "8" }
-quick-xml = { version = "0.39", features = [ "serialize" ] }
+quick-xml = { version = "0.39", features = [ "serialize", "overlapped-lists" ] }
 ratatui = { version = "0.30", features = [ "unstable-widget-ref" ] }
 reqwest = { version = "0.13", features = [ "query", "json", "stream", "form" ] }
 scraper = { version = "0.27", features = [ "serde" ] }

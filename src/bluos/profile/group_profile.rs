@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use super::super::client::ZoneMode;
-use super::super::protocol::LedBrightness;
+use super::super::protocol::{AudioPreset, LedBrightness};
 use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
 use super::common::*;
 use crate::types::DeviceId;
@@ -25,11 +25,10 @@ enum State {
     UngroupMasters,
     WaitForDevices,
     Group,
-    Configure,
     ConfigureInput,
     // NB: process this state after configuring the input. Input selection changes
     // implicitly also cause audio preset changes in bluesound devices.
-    ConfigureAudioPreset,
+    Configure,
     Finished,
 }
 
@@ -40,9 +39,8 @@ impl State {
             | Self::UngroupSlaves
             | Self::UngroupMasters
             | Self::Group
-            | Self::Configure
             | Self::ConfigureInput
-            | Self::ConfigureAudioPreset
+            | Self::Configure
             | Self::WaitForDevices => true,
             Self::Wait { .. } | Self::Finished => false,
         }
@@ -64,7 +62,7 @@ pub struct GroupProfileDevice {
     /// Audio preset, if `None` use the current audio preset value.
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub audio_preset: Option<AudioPresetSelection>,
+    pub audio_preset: Option<AudioPreset>,
 }
 
 impl GroupProfileDevice {
@@ -84,10 +82,6 @@ impl GroupProfileDevice {
                 node_name.is_ascii(),
                 "node name must only contain ASCII chars"
             );
-        }
-
-        if let Some(audio_preset) = self.audio_preset.as_ref() {
-            audio_preset.validate()?;
         }
 
         Ok(())
@@ -206,7 +200,7 @@ impl GroupProfile {
                             })
                         {
                             // Group is already correct, skip grouping step
-                            State::Configure
+                            State::ConfigureInput
                         } else {
                             // Group is incorrect, try and ungroup devices
                             State::UngroupSlaves
@@ -324,30 +318,8 @@ impl GroupProfile {
 
                     State::Wait {
                         duration: Duration::from_secs(5), // Give some time to settle
-                        next_state: Box::new(State::Configure),
+                        next_state: Box::new(State::ConfigureInput),
                     }
-                }
-                State::Configure => {
-                    for (client, profile) in self
-                        .slaves
-                        .iter()
-                        .chain(std::iter::once(&self.master))
-                        .filter_map(|p| {
-                            Some((try_find_client_by_id(&clients, &p.device_id).ok()?, p))
-                        })
-                    {
-                        if let Some(brightness) = profile.led_brightness {
-                            client.set_led_brightness(brightness).await?;
-                        }
-                        if let Some(node_name) = profile.node_name.as_deref() {
-                            client.set_node_name(node_name).await?;
-                        }
-                        if let Some(level) = profile.volume_level {
-                            client.set_volume_level(level, false).await?;
-                        }
-                    }
-
-                    State::ConfigureInput
                 }
                 State::ConfigureInput => {
                     match self.source.as_ref() {
@@ -375,41 +347,28 @@ impl GroupProfile {
                         None => {}
                     }
 
-                    State::ConfigureAudioPreset
+                    State::Configure
                 }
-                State::ConfigureAudioPreset => {
-                    for (client, facts, profile) in self
+                State::Configure => {
+                    for (client, profile) in self
                         .slaves
                         .iter()
                         .chain(std::iter::once(&self.master))
                         .filter_map(|p| {
-                            Some((
-                                try_find_client_by_id(&clients, &p.device_id).ok()?,
-                                try_find_facts_by_id(&facts, &p.device_id).ok()?,
-                                p,
-                            ))
+                            Some((try_find_client_by_id(&clients, &p.device_id).ok()?, p))
                         })
                     {
-                        if let Some(audio_preset_selection) = profile.audio_preset.as_ref() {
-                            let Some(audio_preset) = facts.audio_preset.as_ref() else {
-                                anyhow::bail!(
-                                    "audio preset not available on device {}",
-                                    profile.device_id
-                                );
-                            };
-                            let setting_name = &audio_preset.name;
-                            let setting_value = audio_preset
-                                .find_preset(audio_preset_selection)
-                                .map(|v| v.name.as_str())
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!(
-                                        "invalid audio preset, available: {}",
-                                        audio_preset.list_presets()
-                                    )
-                                })?;
-                            client
-                                .set_audio_preset(setting_name, setting_value, &audio_preset.url)
-                                .await?;
+                        if let Some(brightness) = profile.led_brightness {
+                            client.set_led_brightness(brightness).await?;
+                        }
+                        if let Some(node_name) = profile.node_name.as_deref() {
+                            client.set_node_name(node_name).await?;
+                        }
+                        if let Some(level) = profile.volume_level {
+                            client.set_volume_level(level, false).await?;
+                        }
+                        if let Some(audio_preset) = profile.audio_preset {
+                            client.set_audio_preset(audio_preset).await?;
                         }
                     }
 

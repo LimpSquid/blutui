@@ -60,12 +60,24 @@ async fn handle_action(device_id: DeviceId, client: &HttpClient, action: Action)
                 vec![]
             }
             Action::Poll => {
-                let (diagnostics, input_selection) =
-                    tokio::try_join!(client.get_diagnostics(), client.get_input_selection())?;
-                vec![
-                    Event::DeviceDiagnosticsUpdated(device_id, diagnostics),
-                    Event::DeviceInputSelectionUpdated(device_id, input_selection),
-                ]
+                let (
+                    diagnostics,
+                    input_selection,
+                    audio_settings,
+                    player_settings
+                ) = tokio::try_join!(
+                    client.get_diagnostics(),
+                    client.get_input_selection(),
+                    client.get_audio_settings(),
+                    client.get_player_settings(),
+                )?;
+                vec![Event::DevicePolled(
+                    device_id,
+                    diagnostics,
+                    input_selection,
+                    audio_settings,
+                    player_settings,
+                )]
             }
         };
 
@@ -282,21 +294,8 @@ async fn device_group_status_syncer(
             // Handle group status changes
             status = client.get_group_status(poll_opts.clone()) => match status {
                 Ok(status) => {
-                    let audio_preset_url = status.audio_preset_url.clone();
-
                     poll_opts = Some(PollOpts::new(&status.etag));
                     event_bus.publish_lossy(Event::DeviceGroupStatusUpdated(device.id, status));
-
-                    if let Some(audio_preset_url) = audio_preset_url {
-                        match client.get_audio_preset(&audio_preset_url.url).await {
-                            Ok(audio_preset) => {
-                                event_bus.publish_lossy(Event::DeviceAudioPresetUpdated(device.id, audio_preset))
-                            }
-                            Err(error) => {
-                                tracing::error!(device_id = %device.id, ?error, "failed to get audio preset");
-                            }
-                        }
-                    }
                 }
                 Err(error) => {
                     tracing::error!(device_id = %device.id, ?error, "failed to sync device group status");
@@ -363,6 +362,17 @@ impl DeviceController {
             action: Action::Poll,
         };
         self.action.send(request).await?;
+
+        Ok(())
+    }
+
+    pub async fn poll_many<I: IntoIterator<Item = impl Into<DeviceId>>>(
+        &self,
+        devices: I,
+    ) -> anyhow::Result<()> {
+        for device in devices {
+            self.poll(device).await?;
+        }
 
         Ok(())
     }

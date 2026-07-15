@@ -6,8 +6,8 @@ mod protocol;
 pub use control::DeviceController;
 pub use profile::ProfileController;
 pub use protocol::{
-    DeviceAudioPreset, DeviceDiagnostics, DeviceGroupStatus, DeviceInputSelection,
-    DeviceInputSelectionItem, DeviceState, DeviceStatus, DeviceVolume,
+    DeviceAudioSettings, DeviceDiagnostics, DeviceGroupStatus, DeviceInputSelection,
+    DeviceInputSelectionItem, DevicePlayerSettings, DeviceState, DeviceStatus, DeviceVolume,
 };
 
 pub const MAX_VOLUME_LEVEL: u8 = 100;

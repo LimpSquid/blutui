@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::ops::Deref;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -9,9 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use super::super::client::HttpClient;
-use super::super::protocol::{
-    DeviceAudioPreset, DeviceGroupStatus, DeviceInputSelection, DeviceStatus,
-};
+use super::super::protocol::{DeviceGroupStatus, DeviceInputSelection, DeviceStatus};
 use crate::types::DeviceId;
 
 pub type ClientMap = HashMap<DeviceId, HttpClient>;
@@ -53,8 +50,6 @@ pub struct DeviceFacts {
     pub status: DeviceStatus,
     pub group_status: DeviceGroupStatus,
     pub input_selection: DeviceInputSelection,
-    // NB: only available for specific devices
-    pub audio_preset: Option<DeviceAudioPreset>,
 }
 
 impl DeviceFacts {
@@ -77,39 +72,12 @@ impl DeviceFacts {
             client.get_group_status(None),
             client.get_input_selection(),
         )?;
-        let audio_preset = if let Some(audio_preset_url) = group_status.audio_preset_url.as_ref() {
-            Some(client.get_audio_preset(&audio_preset_url.url).await?)
-        } else {
-            None
-        };
 
         Ok(Self {
             status,
             group_status,
             input_selection,
-            audio_preset,
         })
-    }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-#[serde(transparent)]
-pub struct AudioPresetSelection(String);
-
-impl AudioPresetSelection {
-    pub fn validate(&self) -> anyhow::Result<()> {
-        anyhow::ensure!(!self.0.is_empty(), "audio preset cannot be empty");
-        anyhow::ensure!(self.0.is_ascii(), "audio preset contains non ASCII chars");
-
-        Ok(())
-    }
-}
-
-impl Deref for AudioPresetSelection {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 

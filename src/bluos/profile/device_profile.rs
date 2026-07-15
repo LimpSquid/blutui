@@ -1,7 +1,7 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-use super::super::protocol::LedBrightness;
+use super::super::protocol::{AudioPreset, LedBrightness};
 use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
 use super::common::*;
 use crate::types::DeviceId;
@@ -21,7 +21,7 @@ pub struct DeviceProfile {
     /// Audio preset, if `None` use the current audio preset value.
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub audio_preset: Option<AudioPresetSelection>,
+    pub audio_preset: Option<AudioPreset>,
 }
 
 impl DeviceProfile {
@@ -43,10 +43,6 @@ impl DeviceProfile {
             );
         }
 
-        if let Some(audio_preset) = self.audio_preset.as_ref() {
-            audio_preset.validate()?;
-        }
-
         Ok(())
     }
 
@@ -66,26 +62,8 @@ impl DeviceProfile {
         if let Some(level) = self.volume_level {
             client.set_volume_level(level, false).await?;
         }
-
-        let facts = DeviceFacts::gather_for_one(client).await?;
-
-        if let Some(audio_preset_selection) = self.audio_preset.as_ref() {
-            let Some(audio_preset) = facts.audio_preset.as_ref() else {
-                anyhow::bail!("audio preset not available on device {}", self.device_id);
-            };
-            let setting_name = &audio_preset.name;
-            let setting_value = audio_preset
-                .find_preset(audio_preset_selection)
-                .map(|v| v.name.as_str())
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "invalid audio preset, available: {}",
-                        audio_preset.list_presets()
-                    )
-                })?;
-            client
-                .set_audio_preset(setting_name, setting_value, &audio_preset.url)
-                .await?;
+        if let Some(audio_preset) = self.audio_preset.as_ref() {
+            client.set_audio_preset(*audio_preset).await?;
         }
 
         Ok(())

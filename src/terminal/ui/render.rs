@@ -318,8 +318,9 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         volume,
         group_status,
         diagnostics,
-        audio_preset,
         input_selection,
+        audio_settings,
+        player_settings,
     }) = ctx
         .ui
         .selected_device
@@ -417,8 +418,14 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 ),
             ));
         }
-        if let Some(audio_preset_value) = audio_preset.as_ref().map(|p| p.value.to_lowercase()) {
-            data.push(("audio preset".to_string(), Some(audio_preset_value)));
+        if let Some(led_brightness) = player_settings.as_ref().and_then(|p| p.led_brightness) {
+            data.push((
+                "led indicator".to_string(),
+                Some(led_brightness.to_string()),
+            ));
+        }
+        if let Some(audio_preset) = audio_settings.as_ref().and_then(|p| p.audio_preset) {
+            data.push(("audio preset".to_string(), Some(audio_preset.to_string())));
         }
 
         let data_key_max_len = data

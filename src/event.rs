@@ -5,8 +5,8 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use crate::bluos::{
-    DeviceAudioPreset, DeviceDiagnostics, DeviceGroupStatus, DeviceInputSelection, DeviceStatus,
-    DeviceVolume,
+    DeviceAudioSettings, DeviceDiagnostics, DeviceGroupStatus, DeviceInputSelection,
+    DevicePlayerSettings, DeviceStatus, DeviceVolume,
 };
 use crate::discover::Device;
 use crate::profman::StoredProfile;
@@ -21,9 +21,13 @@ pub enum Event {
     DeviceStatusUpdated(DeviceId, DeviceStatus),
     DeviceVolumeUpdated(DeviceId, DeviceVolume),
     DeviceGroupStatusUpdated(DeviceId, DeviceGroupStatus),
-    DeviceDiagnosticsUpdated(DeviceId, DeviceDiagnostics),
-    DeviceAudioPresetUpdated(DeviceId, DeviceAudioPreset),
-    DeviceInputSelectionUpdated(DeviceId, DeviceInputSelection),
+    DevicePolled(
+        DeviceId,
+        DeviceDiagnostics,
+        DeviceInputSelection,
+        DeviceAudioSettings,
+        DevicePlayerSettings,
+    ),
     DeviceControllerBusy,
     DeviceControllerIdle,
     ProfileTransitionStarted,
