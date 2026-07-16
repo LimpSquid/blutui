@@ -1,5 +1,7 @@
 use anyhow::Context;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
 
 use super::super::protocol::{AudioPreset, LedBrightness};
 use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
@@ -40,6 +42,21 @@ impl DeviceProfile {
             anyhow::ensure!(
                 node_name.is_ascii(),
                 "node name must only contain ASCII chars"
+            );
+        }
+
+        if let Some(led_brightness) = self.led_brightness {
+            anyhow::ensure!(
+                led_brightness != LedBrightness::Unknown,
+                "led brightness invalid, must be one of: {}",
+                LedBrightness::iter().map(|v| v.to_string()).join(", ")
+            );
+        }
+        if let Some(audio_preset) = self.audio_preset {
+            anyhow::ensure!(
+                audio_preset != AudioPreset::Unknown,
+                "audio preset invalid, must be one of: {}",
+                AudioPreset::iter().map(|v| v.to_string()).join(", ")
             );
         }
 

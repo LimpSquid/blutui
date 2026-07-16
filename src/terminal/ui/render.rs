@@ -365,7 +365,7 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         data.push((
             "service".to_string(),
             status.as_ref().map(|s| match s.service.as_ref() {
-                Some(service) => format!("{} ({})", service, s.state,),
+                Some(service) => format!("{} ({})", service, s.state),
                 None => "N/A".to_string(),
             }),
         ));
@@ -578,7 +578,7 @@ fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 selected = Some(index);
                 profile_in_yaml_or_err = match &p.profile {
                     Ok(profile) => yaml_serde::to_string(profile).ok(),
-                    Err(error) => Some(error.to_owned()),
+                    Err(error) => Some(format!("Error: {error}")),
                 }
             }
 

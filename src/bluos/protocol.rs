@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, de};
-use strum_macros::{Display, EnumString};
+use strum_macros::{Display, EnumIter, EnumString};
 
 use crate::serde::number::StrU16;
 use crate::types::GroupId;
@@ -27,7 +27,9 @@ where
     Ok((ip, port))
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, PartialOrd, Ord, strum_macros::Display)]
+#[derive(
+    Debug, Clone, Deserialize, PartialEq, Eq, PartialOrd, Ord, Display, EnumString, EnumIter,
+)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum DeviceState {
@@ -37,6 +39,7 @@ pub enum DeviceState {
     Connecting,
     Stream,
     #[serde(other)]
+    #[strum(disabled)]
     Unknown,
 }
 
@@ -113,7 +116,9 @@ pub struct AudioPresetUrl {
     pub url: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, strum_macros::Display)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Display, EnumString, EnumIter,
+)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "lowercase")]
 pub enum ZoneChannel {
@@ -130,6 +135,7 @@ pub enum ZoneChannel {
     // Powernode, etc
     Side,
     #[serde(other)]
+    #[strum(disabled)]
     Unknown,
 }
 
@@ -279,14 +285,17 @@ pub struct DevicePlayerSettings {
     Serialize,
     Display,
     EnumString,
+    EnumIter,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum LedBrightness {
+    #[serde(alias = "on", alias = "normal")]
     Default,
     Dim,
     Off,
     #[serde(other)]
+    #[strum(disabled)]
     Unknown,
 }
 
@@ -303,6 +312,7 @@ pub enum LedBrightness {
     Serialize,
     Display,
     EnumString,
+    EnumIter,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -312,6 +322,7 @@ pub enum AudioPreset {
     Movie,
     Night,
     #[serde(other)]
+    #[strum(disabled)]
     Unknown,
 }
 

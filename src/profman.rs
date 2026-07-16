@@ -63,13 +63,17 @@ impl StoredProfile {
 async fn profile_from_file(path: impl AsRef<Path>) -> anyhow::Result<Profile> {
     let contents = read_to_string(&path).await?;
 
-    if let Ok(value) = yaml_serde::from_str::<yaml_serde::Value>(&contents) {
-        return Ok(yaml_serde::from_value(value)?);
+    let profile: Profile = if let Ok(value) = yaml_serde::from_str::<yaml_serde::Value>(&contents) {
+        yaml_serde::from_value(value)?
     } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) {
-        return Ok(serde_json::from_value(value)?);
-    }
+        serde_json::from_value(value)?
+    } else {
+        anyhow::bail!("profile file is not valid JSON or YAML");
+    };
 
-    anyhow::bail!("profile file is not valid JSON or YAML");
+    profile.validate()?;
+
+    Ok(profile)
 }
 
 async fn profiles_dir_entries() -> anyhow::Result<Vec<DirEntry>> {
@@ -178,14 +182,14 @@ async fn profile_dir_watcher(
     Ok(())
 }
 
-/// A service that manages the persistent storage of user-defined profiles
+/// A service that manages the user-defined profiles
 #[must_use]
-pub struct ProfileStorageManager {
+pub struct ProfileManager {
     #[allow(unused)]
     cancel: broadcast::Sender<()>,
 }
 
-impl ProfileStorageManager {
+impl ProfileManager {
     pub async fn start(event_bus: EventBus) -> anyhow::Result<Self> {
         let (cancel, _) = broadcast::channel(1);
         let this = Self {

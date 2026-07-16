@@ -14,7 +14,7 @@ use crate::bluos::{
 use crate::discover::{Device, DeviceDiscovery};
 use crate::editor::open_external_editor;
 use crate::event::{Event, EventBus};
-use crate::profman::{ProfileStorageManager, StoredProfile, create_profile};
+use crate::profman::{ProfileManager, StoredProfile, create_profile};
 use crate::types::{DeviceId, GroupId, ProfileId};
 
 bitflags::bitflags! {
@@ -131,7 +131,7 @@ pub struct App {
     pub device_discovery: DeviceDiscovery,
     pub device_controller: DeviceController,
     pub profile_controller: ProfileController,
-    pub profile_storage_manager: ProfileStorageManager,
+    pub profile_manager: ProfileManager,
     pub state: AppState,
     pub ui: Ui,
 }
@@ -141,13 +141,13 @@ impl App {
         let device_discovery = DeviceDiscovery::start(event_bus.clone()).await?;
         let device_controller = DeviceController::start(event_bus.clone()).await?;
         let profile_controller = ProfileController::start(event_bus.clone()).await?;
-        let profile_storage_manager = ProfileStorageManager::start(event_bus.clone()).await?;
+        let profile_manager = ProfileManager::start(event_bus.clone()).await?;
 
         Ok(Self {
             device_discovery,
             device_controller,
             profile_controller,
-            profile_storage_manager,
+            profile_manager,
             state: Default::default(),
             ui: Default::default(),
         })
