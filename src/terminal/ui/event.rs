@@ -39,14 +39,8 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
         UserEvent::FocusGained => ui.action(UserAction::RefreshDevices),
         UserEvent::Key(code, modifiers) => match (ui.window_focus, code) {
             // Re-route input to dialog and handle event
-            (_, _) if ui.active_dialog.is_some() => {
-                match ui
-                    .active_dialog
-                    .as_mut()
-                    .expect("Uhoh, you've escaped the matrix")
-                    .as_mut()
-                    .on_key_press(code, modifiers)
-                {
+            (_, _) if let Some(dialog) = ui.active_dialog.as_mut() => {
+                match dialog.on_key_press(code, modifiers) {
                     Some(DialogEvent::Actions(actions)) => ui.actions(actions),
                     Some(DialogEvent::Submitted(actions)) => {
                         ui.actions(actions);
