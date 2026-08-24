@@ -448,8 +448,11 @@ pub fn app_init_logging(event_bus: EventBus) -> LogGuard {
         )
     };
 
-    let registry =
-        tracing_subscriber::registry().with(tracing_subscriber::EnvFilter::from_default_env());
+    let registry = tracing_subscriber::registry().with(
+        tracing_subscriber::EnvFilter::builder()
+            .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+            .from_env_lossy(),
+    );
 
     #[cfg(all(feature = "fs-enable-logs", feature = "ui-enable-logs"))]
     {

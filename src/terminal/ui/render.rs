@@ -391,7 +391,7 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             && !input_selection.item.is_empty()
         {
             data.push((
-                "input source".to_string(),
+                "input source(s)".to_string(),
                 Some(
                     input_selection
                         .item
