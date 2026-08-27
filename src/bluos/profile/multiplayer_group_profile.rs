@@ -5,10 +5,12 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
 use tokio::time::sleep;
 
 use super::super::client::ZoneMode;
 use super::common::*;
+use crate::bluos::{AudioPreset, LedBrightness};
 use crate::types::DeviceId;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -22,8 +24,12 @@ enum State {
     UngroupSlaves,
     UngroupMasters,
     WaitForDevices,
-    GroupCheck,
+    CheckCapabilities,
+    RenameSlaves,
     Group,
+    GroupWait,
+    ConfigureSlaves,
+    ConfigureMaster,
     Finished,
 }
 
@@ -33,18 +39,58 @@ impl State {
             Self::Check
             | Self::UngroupSlaves
             | Self::UngroupMasters
-            | Self::GroupCheck
+            | Self::WaitForDevices
+            | Self::CheckCapabilities
+            | Self::RenameSlaves
             | Self::Group
-            | Self::WaitForDevices => true,
+            | Self::GroupWait
+            | Self::ConfigureSlaves
+            | Self::ConfigureMaster => true,
             Self::Wait { .. } | Self::Finished => false,
         }
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MultiplayerGroupProfileSlave {
+    pub device_id: DeviceId,
+    pub node_name: String,
+    /// Volume trim in mdB
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_trim: Option<f32>,
+    /// Led brightness, if `None` use the current brightness
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub led_brightness: Option<LedBrightness>,
+}
+
+impl MultiplayerGroupProfileSlave {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // Ensure valid node name
+        validate_name(&self.node_name)?;
+
+        if let Some(led_brightness) = self.led_brightness {
+            anyhow::ensure!(
+                led_brightness != LedBrightness::Unknown,
+                "led brightness invalid, must be one of: {}",
+                LedBrightness::iter().map(|v| v.to_string()).join(", ")
+            );
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MultiplayerGroupProfile {
     pub master: DeviceId,
-    pub slaves: Vec<DeviceId>,
+    /// Audio preset, if `None` use the current audio preset value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_preset: Option<AudioPreset>,
+    /// Led brightness, if `None` use the current brightness
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub led_brightness: Option<LedBrightness>,
+    pub slaves: Vec<MultiplayerGroupProfileSlave>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_name: Option<String>,
     /// Extra devices to ungroup. In certain cases we cannot determine
@@ -71,27 +117,53 @@ impl MultiplayerGroupProfile {
             "at least one slave needs to be specified"
         );
 
+        // Validate slaves
+        self.slaves
+            .iter()
+            .try_for_each(MultiplayerGroupProfileSlave::validate)?;
+
         // Master cannot be specified in slaves
         anyhow::ensure!(
-            !self.slaves.contains(&self.master),
+            !self
+                .slaves
+                .iter()
+                .map(|s| s.device_id)
+                .contains(&self.master),
             "master device is also specified in slaves"
         );
 
         // There can be no duplicate slaves
         anyhow::ensure!(
-            self.slaves.iter().unique().count() == self.slaves.len(),
+            self.slaves.iter().map(|s| s.device_id).unique().count() == self.slaves.len(),
             "duplicate slave specified"
         );
 
+        // There can be no duplicate node names
+        anyhow::ensure!(
+            self.slaves
+                .iter()
+                .map(|s| s.node_name.as_str())
+                .unique()
+                .count()
+                == self.slaves.len(),
+            "duplicate slave node name specified"
+        );
+
         if let Some(group_name) = self.group_name.as_deref() {
-            anyhow::ensure!(group_name.len() > 0, "node name must be atleast one char");
+            validate_name(group_name)?;
+        }
+        if let Some(led_brightness) = self.led_brightness {
             anyhow::ensure!(
-                group_name.len() <= 32,
-                "node name must be 32 chars at maximum"
+                led_brightness != LedBrightness::Unknown,
+                "led brightness invalid, must be one of: {}",
+                LedBrightness::iter().map(|v| v.to_string()).join(", ")
             );
+        }
+        if let Some(audio_preset) = self.audio_preset {
             anyhow::ensure!(
-                group_name.is_ascii(),
-                "node name must only contain ASCII chars"
+                audio_preset != AudioPreset::Unknown,
+                "audio preset invalid, must be one of: {}",
+                AudioPreset::iter().map(|v| v.to_string()).join(", ")
             );
         }
 
@@ -129,12 +201,21 @@ impl MultiplayerGroupProfile {
                 }
 
                 State::Check => match try_find_facts_by_id(&facts, &self.master) {
-                    // TODO: better way of checking that zone group is correct?
                     Ok(facts)
                         if facts.group_status.slave.is_empty()
-                            && facts.group_status.zone_slave.len() == self.slaves.len() =>
+                            && facts.group_status.zone_slave.len() == self.slaves.len()
+                            && self.slaves.iter().all(|s| {
+                                facts
+                                    .group_status
+                                    .zone_slave
+                                    .iter()
+                                    .find(|zs| {
+                                        zs.name.as_deref().is_some_and(|name| name == s.node_name)
+                                    })
+                                    .is_some()
+                            }) =>
                     {
-                        State::Finished
+                        State::ConfigureSlaves
                     }
                     _ => State::UngroupSlaves,
                 },
@@ -142,6 +223,7 @@ impl MultiplayerGroupProfile {
                     for ((master_ip, master_port), endpoints_to_remove) in self
                         .slaves
                         .iter()
+                        .map(|s| &s.device_id)
                         .chain(std::iter::once(&self.master))
                         .chain(self.ungroup_extra.clone().unwrap_or_default().iter())
                         .filter_map(|device_id| try_find_facts_by_id(&facts, &device_id).ok())
@@ -174,6 +256,7 @@ impl MultiplayerGroupProfile {
                     for ((master_ip, master_port), endpoints_to_remove) in self
                         .slaves
                         .iter()
+                        .map(|s| &s.device_id)
                         .chain(std::iter::once(&self.master))
                         .chain(self.ungroup_extra.clone().unwrap_or_default().iter())
                         .filter_map(|device_id| try_find_facts_by_id(&facts, &device_id).ok())
@@ -207,13 +290,14 @@ impl MultiplayerGroupProfile {
                     let not_found: Vec<_> = self
                         .slaves
                         .iter()
+                        .map(|s| &s.device_id)
                         .chain(std::iter::once(&self.master))
                         // Wait until device is reachable
                         .filter(|device_id| try_find_facts_by_id(&facts, device_id).is_err())
                         .collect();
 
                     if not_found.is_empty() {
-                        State::GroupCheck
+                        State::CheckCapabilities
                     } else {
                         anyhow::ensure!(
                             transition_time_point.elapsed() < Duration::from_secs(90),
@@ -225,7 +309,7 @@ impl MultiplayerGroupProfile {
                         State::WaitForDevices
                     }
                 }
-                State::GroupCheck => {
+                State::CheckCapabilities => {
                     anyhow::ensure!(
                         try_find_facts_by_id(&facts, &self.master)?
                             .group_status
@@ -236,7 +320,7 @@ impl MultiplayerGroupProfile {
                         self.master
                     );
 
-                    for slave in self.slaves.iter() {
+                    for slave in self.slaves.iter().map(|s| &s.device_id) {
                         anyhow::ensure!(
                             try_find_facts_by_id(&facts, &slave)?
                                 .group_status
@@ -247,6 +331,15 @@ impl MultiplayerGroupProfile {
                         );
                     }
 
+                    State::RenameSlaves
+                }
+                State::RenameSlaves => {
+                    for slave in &self.slaves {
+                        try_find_client_by_id(&clients, &slave.device_id)?
+                            .set_node_name(&slave.node_name)
+                            .await?;
+                    }
+
                     State::Group
                 }
                 State::Group => {
@@ -254,6 +347,7 @@ impl MultiplayerGroupProfile {
                     let endpoints_to_add: Vec<_> = self
                         .slaves
                         .iter()
+                        .map(|s| &s.device_id)
                         .filter_map(|s| try_find_client_by_id(&clients, s).ok())
                         .map(|client| client.ip_and_port())
                         .collect();
@@ -270,10 +364,80 @@ impl MultiplayerGroupProfile {
                         )
                         .await?;
 
-                    State::Wait {
-                        duration: Duration::from_secs(1),
-                        next_state: Box::new(State::Finished),
+                    State::GroupWait
+                }
+                State::GroupWait => {
+                    let facts = try_find_facts_by_id(&facts, &self.master)?;
+
+                    if self.slaves.iter().all(|s| {
+                        facts
+                            .group_status
+                            .zone_slave
+                            .iter()
+                            .find(|zs| zs.name.as_deref().is_some_and(|name| name == s.node_name))
+                            .is_some()
+                    }) {
+                        State::ConfigureSlaves
+                    } else {
+                        anyhow::ensure!(
+                            transition_time_point.elapsed() < Duration::from_secs(30),
+                            "timeout waiting on zone slaves to become available"
+                        );
+
+                        sleep(Duration::from_secs(1)).await;
+                        State::GroupWait
                     }
+                }
+                State::ConfigureSlaves => {
+                    let client = try_find_client_by_id(&clients, &self.master)?;
+                    let facts = try_find_facts_by_id(&facts, &self.master)?;
+
+                    for profile in self.slaves.iter() {
+                        let zone_slave = facts
+                            .group_status
+                            .zone_slave
+                            .iter()
+                            .find(|zs| {
+                                zs.name
+                                    .as_deref()
+                                    .is_some_and(|name| name == profile.node_name)
+                            })
+                            .context(format!(
+                                "zone slave not found in group: {}",
+                                profile.node_name
+                            ))?;
+
+                        if let Some(volume_trim) = profile.volume_trim {
+                            client
+                                .set_zone_slave_volume_level(
+                                    (zone_slave.ip_addr, *zone_slave.port),
+                                    volume_trim,
+                                )
+                                .await?;
+                        }
+                        if let Some(brightness) = profile.led_brightness {
+                            client
+                                .set_zone_slave_led_brightness(
+                                    (zone_slave.ip_addr, *zone_slave.port),
+                                    brightness,
+                                )
+                                .await?;
+                        }
+                    }
+
+                    State::ConfigureMaster
+                }
+                State::ConfigureMaster => {
+                    let client = try_find_client_by_id(&clients, &self.master)?;
+
+                    if let Some(brightness) = self.led_brightness {
+                        client.set_led_brightness(brightness).await?;
+                    }
+                    if let Some(audio_preset) = self.audio_preset {
+                        client.set_audio_preset(audio_preset).await?;
+                    }
+
+                    State::Finished
                 }
                 State::Finished => break,
             };

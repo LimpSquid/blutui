@@ -15,6 +15,20 @@ pub type ClientMap = HashMap<DeviceId, HttpClient>;
 pub type SharedClientMap = Arc<RwLock<ClientMap>>;
 pub type FactMap = HashMap<DeviceId, DeviceFacts>;
 
+pub fn validate_name(node_name: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(node_name.len() > 0, "node name must be atleast one char");
+    anyhow::ensure!(
+        node_name.len() <= 32,
+        "node name must be 32 chars at maximum"
+    );
+    anyhow::ensure!(
+        node_name.is_ascii(),
+        "node name must only contain ASCII chars"
+    );
+
+    Ok(())
+}
+
 pub fn try_find_client_by_id<'a>(
     clients: &'a ClientMap,
     device_id: &'a DeviceId,

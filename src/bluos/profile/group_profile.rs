@@ -48,7 +48,7 @@ impl State {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GroupProfileDevice {
     pub device_id: DeviceId,
     /// Volume level 0 - 100, if `None` use the current level
@@ -74,17 +74,8 @@ impl GroupProfileDevice {
         );
 
         if let Some(node_name) = self.node_name.as_deref() {
-            anyhow::ensure!(node_name.len() > 0, "node name must be atleast one char");
-            anyhow::ensure!(
-                node_name.len() <= 32,
-                "node name must be 32 chars at maximum"
-            );
-            anyhow::ensure!(
-                node_name.is_ascii(),
-                "node name must only contain ASCII chars"
-            );
+            validate_name(node_name)?;
         }
-
         if let Some(led_brightness) = self.led_brightness {
             anyhow::ensure!(
                 led_brightness != LedBrightness::Unknown,
@@ -104,7 +95,7 @@ impl GroupProfileDevice {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GroupProfile {
     /// The master of the group
     pub master: GroupProfileDevice,

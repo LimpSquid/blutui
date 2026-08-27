@@ -17,7 +17,7 @@ const POLL_GRACE_PERIOD: u64 = 2; // In seconds
 /// The default request timeout if not long-polling
 const REQUEST_TIMEOUT: u64 = 5; // In seconds
 /// The timeout for the add slaves request
-const REQUEST_TIMEOUT_ADD_SLAVES: u64 = 60; // In seconds
+const REQUEST_TIMEOUT_ADD_SLAVES: u64 = 90; // In seconds
 const DEFAULT_DEVICE_PORT: u16 = 11000;
 
 trait RequestBuilderExt {
@@ -274,6 +274,25 @@ impl HttpClient {
         Ok(device_volume)
     }
 
+    pub async fn set_zone_slave_volume_level(
+        &self,
+        (slave_ip, slave_port): (IpAddr, u16),
+        db: f32,
+    ) -> anyhow::Result<()> {
+        self.client
+            .get(self.api_path("SlaveVolume")?)
+            .query(&[
+                ("slave", format!("{slave_ip}:{slave_port}")),
+                ("db", format!("{:.2}", db)),
+            ])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
     pub async fn set_led_brightness(&self, brightness: LedBrightness) -> anyhow::Result<()> {
         anyhow::ensure!(
             brightness != LedBrightness::Unknown,
@@ -281,6 +300,30 @@ impl HttpClient {
         );
         self.client
             .post(self.api_path("setting")?)
+            .form(&[("ledbrightness", brightness.to_string())])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
+    pub async fn set_zone_slave_led_brightness(
+        &self,
+        (slave_ip, slave_port): (IpAddr, u16),
+        brightness: LedBrightness,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            brightness != LedBrightness::Unknown,
+            "unknown led brightness not supported"
+        );
+        self.client
+            .post(self.api_path("proxyToSlave")?)
+            .query(&[
+                ("slave", format!("{slave_ip}:{slave_port}")),
+                ("url", "/setting".to_string()),
+            ])
             .form(&[("ledbrightness", brightness.to_string())])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()

@@ -10,7 +10,7 @@ use super::group_profile::GroupProfile;
 use super::multiplayer_group_profile::MultiplayerGroupProfile;
 use crate::event::{Event, EventBus};
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum Profile {
     Device(DeviceProfile),
