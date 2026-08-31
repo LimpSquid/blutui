@@ -17,7 +17,7 @@ struct ActionRequest {
 
 #[derive(Debug, Clone, Copy)]
 enum Action {
-    VolumeStep(f32, bool),
+    VolumeStep(f64, bool),
     Pause,
     Play,
     Stop,

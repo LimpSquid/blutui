@@ -3,11 +3,12 @@ use std::fmt;
 use std::ops::{Deref, DerefMut};
 
 use serde::de::{Error, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 macro_rules! impl_str_number {
     ($name:ident, $number_ty:ty) => {
-        #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+        #[serde(transparent)]
         pub struct $name($number_ty);
 
         impl Deref for $name {

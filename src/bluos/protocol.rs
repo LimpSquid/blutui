@@ -28,7 +28,17 @@ where
 }
 
 #[derive(
-    Debug, Clone, Deserialize, PartialEq, Eq, PartialOrd, Ord, Display, EnumString, EnumIter,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Display,
+    EnumString,
+    EnumIter,
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -49,12 +59,12 @@ impl DeviceState {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceStatus {
-    #[serde(rename = "@etag")]
+    #[serde(skip_serializing, rename = "@etag")]
     pub etag: String,
     pub volume: i32,
-    pub db: f32,
+    pub db: f64,
     pub title1: Option<String>,
     pub title2: Option<String>,
     pub artist: Option<String>,
@@ -63,14 +73,14 @@ pub struct DeviceStatus {
     pub service: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceVolume {
-    #[serde(rename = "@etag")]
+    #[serde(skip_serializing, rename = "@etag")]
     pub etag: String,
     #[serde(rename = "@db")]
-    pub db: f32,
+    pub db: f64,
     #[serde(rename = "@offsetDb")]
-    pub offset_db: f32,
+    pub offset_db: f64,
     #[serde(rename = "@mute")]
     pub mute: bool,
     #[serde(rename = "@source")]
@@ -78,7 +88,7 @@ pub struct DeviceVolume {
     #[serde(rename = "$text")]
     pub volume: i32,
 }
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceGroupMaster {
     #[serde(rename = "$text")]
     pub ip_addr: IpAddr,
@@ -86,7 +96,7 @@ pub struct DeviceGroupMaster {
     pub port: u16,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceGroupSlave {
     #[serde(rename = "@id")]
     pub ip_addr: IpAddr,
@@ -98,7 +108,7 @@ pub struct DeviceGroupSlave {
     pub model: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceGroupZoneSlave {
     #[serde(rename = "@id")]
     pub ip_addr: IpAddr,
@@ -110,17 +120,27 @@ pub struct DeviceGroupZoneSlave {
     pub model: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioPresetUrl {
     #[serde(rename = "@url")]
     pub url: String,
 }
 
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Display, EnumString, EnumIter,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    Display,
+    EnumString,
+    EnumIter,
 )]
 #[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "lowercase")]
+#[strum(serialize_all = "snake_case")]
 pub enum ZoneChannel {
     // Soundbar, powernode, etc
     Front,
@@ -152,13 +172,13 @@ impl ZoneChannel {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceZoneOption {
     #[serde(rename = "$text")]
     pub channel: ZoneChannel,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceZoneOptions {
     #[serde(default)]
     pub option: Vec<DeviceZoneOption>,
@@ -174,9 +194,9 @@ impl DeviceZoneOptions {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceGroupStatus {
-    #[serde(rename = "@etag")]
+    #[serde(skip_serializing, rename = "@etag")]
     pub etag: String,
     #[serde(rename = "@brand")]
     pub brand: Option<String>,
@@ -224,14 +244,14 @@ impl DeviceGroupStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceDiagnostics {
     pub connected_to_network: Option<String>,
     pub signal_strength: Option<String>,
     pub uptime: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInputSelection {
     #[serde(default)]
     pub item: Vec<DeviceInputSelectionItem>,
@@ -252,7 +272,7 @@ impl DeviceInputSelection {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInputSelectionItem {
     #[serde(rename = "@text")]
     pub text: String,
@@ -260,13 +280,13 @@ pub struct DeviceInputSelectionItem {
     pub url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceAudioSettings {
     /// NB: Only available on specific devices
     pub audio_preset: Option<AudioPreset>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DevicePlayerSettings {
     /// NB: Only available on specific devices
     pub led_brightness: Option<LedBrightness>,

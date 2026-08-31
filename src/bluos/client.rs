@@ -277,7 +277,7 @@ impl HttpClient {
     pub async fn set_zone_slave_volume_level(
         &self,
         (slave_ip, slave_port): (IpAddr, u16),
-        db: f32,
+        db: f64,
     ) -> anyhow::Result<()> {
         self.client
             .get(self.api_path("SlaveVolume")?)
@@ -347,7 +347,7 @@ impl HttpClient {
 
     pub async fn volume_step(
         &self,
-        db_step: f32,
+        db_step: f64,
         tell_slaves: bool,
     ) -> anyhow::Result<DeviceVolume> {
         let response = self

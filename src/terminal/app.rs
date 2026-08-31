@@ -15,6 +15,7 @@ use crate::discover::{Device, DeviceDiscovery};
 use crate::editor::open_external_editor;
 use crate::event::{Event, EventBus};
 use crate::profman::{ProfileManager, StoredProfile, create_profile};
+use crate::serde::diff::json_diff;
 use crate::types::{DeviceId, GroupId, ProfileId};
 
 bitflags::bitflags! {
@@ -175,7 +176,14 @@ impl App {
             }
             Event::DeviceStatusUpdated(id, value) => {
                 self.device_controller.poll(id).await?;
+
                 if let Some(state) = self.state.device_state.get_mut(&id) {
+                    if let Some(diff) = state.status.as_ref().map(|c| json_diff(c, &value))
+                        && !diff.is_empty()
+                    {
+                        tracing::debug!(?diff, "device status updated");
+                    }
+
                     state.status = Some(value);
                 }
             }
@@ -186,6 +194,12 @@ impl App {
             }
             Event::DeviceGroupStatusUpdated(id, value) => {
                 if let Some(state) = self.state.device_state.get_mut(&id) {
+                    if let Some(diff) = state.group_status.as_ref().map(|c| json_diff(c, &value))
+                        && !diff.is_empty()
+                    {
+                        tracing::debug!(?diff, "device group status updated");
+                    }
+
                     state.group_status = Some(value);
                 }
             }
@@ -197,6 +211,39 @@ impl App {
                 player_settings,
             ) => {
                 if let Some(state) = self.state.device_state.get_mut(&id) {
+                    if let Some(diff) = state
+                        .diagnostics
+                        .as_ref()
+                        .map(|c| json_diff(c, &diagnostics))
+                        && !diff.is_empty()
+                    {
+                        tracing::debug!(?diff, "device diagnostics polled");
+                    }
+                    if let Some(diff) = state
+                        .input_selection
+                        .as_ref()
+                        .map(|c| json_diff(c, &input_selection))
+                        && !diff.is_empty()
+                    {
+                        tracing::debug!(?diff, "device input selection polled");
+                    }
+                    if let Some(diff) = state
+                        .audio_settings
+                        .as_ref()
+                        .map(|c| json_diff(c, &audio_settings))
+                        && !diff.is_empty()
+                    {
+                        tracing::debug!(?diff, "device audio settings polled");
+                    }
+                    if let Some(diff) = state
+                        .player_settings
+                        .as_ref()
+                        .map(|c| json_diff(c, &player_settings))
+                        && !diff.is_empty()
+                    {
+                        tracing::debug!(?diff, "device player settings polled");
+                    }
+
                     state.diagnostics = Some(diagnostics);
                     state.input_selection = Some(input_selection);
                     state.audio_settings = Some(audio_settings);

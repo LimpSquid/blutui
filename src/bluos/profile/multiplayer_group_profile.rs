@@ -57,7 +57,7 @@ pub struct MultiplayerGroupProfileSlave {
     pub node_name: String,
     /// Volume trim in mdB
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volume_trim: Option<f32>,
+    pub volume_trim: Option<f64>,
     /// Led brightness, if `None` use the current brightness
     #[serde(skip_serializing_if = "Option::is_none")]
     pub led_brightness: Option<LedBrightness>,
