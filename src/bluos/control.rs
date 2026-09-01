@@ -112,7 +112,7 @@ async fn processor(
             tokio::select! {
                 // Handle cancel request
                 _ = cancel.recv() => {
-                    tracing::debug!("device controller terminated");
+                    tracing::debug!("device control processor terminated");
                     break 'main;
                 },
                 // Handle action requests
@@ -294,13 +294,13 @@ fn start_device_action_processor(
     let client = HttpClient::from_device(&device);
 
     tokio::spawn(async move {
-        loop {
+        'main: loop {
             tokio::select! {
                 // Handle action requests
                 action = action.recv() => match action {
                     None => {
-                        tracing::debug!("action channel terminated");
-                        break;
+                        tracing::debug!(device_id = %device.id, "device action processor terminated");
+                        break 'main;
                     }
                     Some(action) => {
                         handle_action(device.id, &client, action)

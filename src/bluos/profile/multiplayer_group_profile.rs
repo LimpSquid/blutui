@@ -90,6 +90,9 @@ pub struct MultiplayerGroupProfile {
     /// Led brightness, if `None` use the current brightness
     #[serde(skip_serializing_if = "Option::is_none")]
     pub led_brightness: Option<LedBrightness>,
+    /// The source selection of this group, if `None` use the current source selection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceSelection>,
     pub slaves: Vec<MultiplayerGroupProfileSlave>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_name: Option<String>,
@@ -165,6 +168,9 @@ impl MultiplayerGroupProfile {
                 "audio preset invalid, must be one of: {}",
                 AudioPreset::iter().map(|v| v.to_string()).join(", ")
             );
+        }
+        if let Some(source) = self.source.as_ref() {
+            source.validate()?;
         }
 
         Ok(())
@@ -435,6 +441,30 @@ impl MultiplayerGroupProfile {
                     }
                     if let Some(audio_preset) = self.audio_preset {
                         client.set_audio_preset(audio_preset).await?;
+                    }
+                    match self.source.as_ref() {
+                        Some(SourceSelection::Input { input }) => {
+                            let (master, facts) = (
+                                try_find_client_by_id(&clients, &self.master)?,
+                                try_find_facts_by_id(&facts, &self.master)?,
+                            );
+                            let play_url = facts
+                                .input_selection
+                                .find_input(input)
+                                .map(|i| i.url.clone())
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "invalid input selection, available: {}",
+                                        facts.input_selection.list_inputs()
+                                    )
+                                })?;
+                            master.play(Some(play_url)).await?;
+                        }
+                        Some(SourceSelection::Preset { preset_id }) => {
+                            let master = try_find_client_by_id(&clients, &self.master)?;
+                            master.load_preset(*preset_id).await?;
+                        }
+                        None => {}
                     }
 
                     State::Finished

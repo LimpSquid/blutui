@@ -251,18 +251,28 @@ fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect)
             .enumerate()
             .map(|(index, (device, group_status))| {
                 let device_last_update = device.last_update;
-                let device_name = device
-                    .attributes
-                    .first()
-                    .and_then(|a| a.fields.get("name").cloned())
-                    .unwrap_or_else(|| device.id.to_string());
-                let device_model = device
-                    .attributes
-                    .iter()
-                    .flat_map(|a| a.fields.iter())
-                    .find(|(k, _)| *k == "model")
-                    .map(|(_, v)| v.to_owned())
-                    .unwrap_or("N/A".to_string());
+                let device_name = group_status
+                    .as_ref()
+                    .and_then(|s| s.name.clone())
+                    .unwrap_or_else(|| {
+                        device
+                            .attributes
+                            .first()
+                            .and_then(|a| a.fields.get("name").cloned())
+                            .unwrap_or_else(|| device.id.to_string())
+                    });
+                let device_model = group_status
+                    .as_ref()
+                    .map(|s| s.model.clone())
+                    .unwrap_or_else(|| {
+                        device
+                            .attributes
+                            .iter()
+                            .flat_map(|a| a.fields.iter())
+                            .find(|(k, _)| *k == "model")
+                            .map(|(_, v)| v.to_owned())
+                            .unwrap_or("N/A".to_string())
+                    });
                 if ctx
                     .ui
                     .selected_device
