@@ -21,7 +21,6 @@ use crate::types::{DeviceId, GroupId, ProfileId};
 bitflags::bitflags! {
     pub struct BusyFlags: u32 {
         const PROFILE_TRANSITIONING = 1 << 0;
-        const DEVICE_CONTROLLER_BUSY = 1 << 1;
     }
 }
 
@@ -274,14 +273,6 @@ impl App {
                     self.ui.show_notification(format!("{error:?}"));
                 }
             }
-            Event::DeviceControllerBusy => self
-                .state
-                .busy_flags
-                .insert(BusyFlags::DEVICE_CONTROLLER_BUSY),
-            Event::DeviceControllerIdle => self
-                .state
-                .busy_flags
-                .remove(BusyFlags::DEVICE_CONTROLLER_BUSY),
             Event::DiscoveryAnnouncement(..) => {}
             #[cfg(feature = "ui-enable-logs")]
             Event::Logs(logs) => {

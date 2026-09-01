@@ -104,8 +104,8 @@ async fn processor(
 
     'main: loop {
         let mut event_stream = event_bus.subscribe();
-        let mut syncer_cancel: HashMap<DeviceId, broadcast::Sender<()>> = HashMap::new();
-        let mut clients: HashMap<DeviceId, HttpClient> = HashMap::new();
+        let mut syncer_handles: HashMap<DeviceId, broadcast::Sender<()>> = HashMap::new();
+        let mut processor_handles: HashMap<DeviceId, mpsc::Sender<Action>> = HashMap::new();
         let mut action_buf = Vec::new();
 
         loop {
@@ -115,66 +115,43 @@ async fn processor(
                     tracing::debug!("device controller terminated");
                     break 'main;
                 },
-                 // Handle action requests
+                // Handle action requests
                 n_reqs = action.recv_many(&mut action_buf, 128) => match n_reqs {
                     0 => {
                         tracing::debug!("action channel terminated");
                         break 'main;
                     }
                     _ => {
-                        event_bus.publish_lossy(Event::DeviceControllerBusy);
-
-                        let tasks_to_poll = action_buf
-                            .drain(..)
-                            // Action requests are serialized per device but run concurrently across devices
-                            .fold(HashMap::new(), |mut acc: HashMap<_, Vec<_>>, req| {
-                                acc.entry(req.device_id).or_default().push(req.action);
-                                acc
-                            })
-                            .into_iter()
-                            .filter_map(|(device_id, actions)| {
-                                Some((device_id, clients.get(&device_id).cloned()?, actions))
-                            })
-                            .map(|(device_id, client, actions)| async move {
-                                let mut events = Vec::new();
-                                for action in actions {
-                                    events.extend(handle_action(device_id, &client, action).await);
+                        for ActionRequest { device_id, action } in action_buf.drain(..) {
+                            if let Some(processor) = processor_handles.get(&device_id) {
+                                if let Err(error) = processor.send(action).await {
+                                    tracing::warn!(?error, "failed to process action");
                                 }
-                                events
-                            })
-                            .map(tokio::task::spawn);
-
-                        futures::future::try_join_all(tasks_to_poll)
-                            .await
-                            .ok()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .flatten()
-                            .chain(std::iter::once(Event::DeviceControllerIdle))
-                            .for_each(|e| event_bus.publish_lossy(e));
+                            }
+                        }
                     },
                 },
                 // Handle device discovery events
                 event = event_stream.recv() => match event {
                     Ok(Event::DeviceAnnouncement(device)) => {
-                        // Create the HTTP client
-                        clients.entry(device.id).or_insert_with(|| {
-                            HttpClient::from_device(&device)
-                        });
-
                         // Start device syncer task
-                        syncer_cancel.entry(device.id).or_insert_with(|| {
+                        syncer_handles.entry(device.id).or_insert_with(|| {
                             let (cancel, _) = broadcast::channel(1);
-                            start_device_sync(device, event_bus.clone(), cancel.subscribe());
+                            start_device_sync(device.clone(), event_bus.clone(), cancel.subscribe());
                             cancel
+                        });
+                        // Start device action processor task
+                        processor_handles.entry(device.id).or_insert_with(|| {
+                            let (action_tx, action_rx) = mpsc::channel(64);
+                            start_device_action_processor(device, event_bus.clone(), action_rx);
+                            action_tx
                         });
                     }
                     Ok(Event::DeviceGone(device)) => {
-                        // Stop device syncer task
-                        syncer_cancel.remove(&device.id);
-
-                        // Remove the HTTP client
-                        clients.remove(&device.id);
+                        // Stop the device syncer task
+                        syncer_handles.remove(&device.id);
+                        // Stop the device action processor task
+                        processor_handles.remove(&device.id);
                     }
                     Ok(_) => {}
                     Err(error) => {
@@ -304,6 +281,37 @@ async fn device_group_status_syncer(
             }
         }
     }
+}
+
+#[tracing::instrument(skip_all)]
+fn start_device_action_processor(
+    device: Device,
+    event_bus: EventBus,
+    mut action: mpsc::Receiver<Action>,
+) {
+    tracing::info!(device_id = %device.id, "started BluOS device action processor");
+
+    let client = HttpClient::from_device(&device);
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                // Handle action requests
+                action = action.recv() => match action {
+                    None => {
+                        tracing::debug!("action channel terminated");
+                        break;
+                    }
+                    Some(action) => {
+                        handle_action(device.id, &client, action)
+                            .await
+                            .into_iter()
+                            .for_each(|e| event_bus.publish_lossy(e));
+                    },
+                },
+            }
+        }
+    });
 }
 
 /// A service to control BluOS compatible devices

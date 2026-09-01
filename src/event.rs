@@ -28,8 +28,6 @@ pub enum Event {
         DeviceAudioSettings,
         DevicePlayerSettings,
     ),
-    DeviceControllerBusy,
-    DeviceControllerIdle,
     ProfileTransitionStarted,
     ProfileTransitionCompleted(Arc<anyhow::Result<()>>),
     ProfilesLoaded(Vec<StoredProfile>),
