@@ -311,7 +311,7 @@ impl MultiplayerGroupProfile {
                             not_found.into_iter().join(", ")
                         );
 
-                        sleep(Duration::from_secs(1)).await;
+                        sleep(Duration::from_secs(5)).await;
                         State::WaitForDevices
                     }
                 }
@@ -372,6 +372,9 @@ impl MultiplayerGroupProfile {
 
                     State::GroupWait
                 }
+                // TODO: If the multiplayer group is created via the master device's hotspot,
+                // remove those clients from the client map once they become unreachable
+                // to avoid unnecessary delays.
                 State::GroupWait => {
                     let facts = try_find_facts_by_id(&facts, &self.master)?;
 
@@ -390,7 +393,7 @@ impl MultiplayerGroupProfile {
                             "timeout waiting on zone slaves to become available"
                         );
 
-                        sleep(Duration::from_secs(1)).await;
+                        sleep(Duration::from_secs(5)).await;
                         State::GroupWait
                     }
                 }

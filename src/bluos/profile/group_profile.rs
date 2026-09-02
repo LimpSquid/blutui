@@ -303,7 +303,7 @@ impl GroupProfile {
                             not_found.into_iter().join(", ")
                         );
 
-                        sleep(Duration::from_secs(1)).await;
+                        sleep(Duration::from_secs(5)).await;
                         State::WaitForDevices
                     }
                 }

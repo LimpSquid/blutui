@@ -61,7 +61,7 @@ async fn queue_processor(
                 Some(profile) => {
                     event_bus.publish_lossy(Event::ProfileTransitionStarted);
                     let result = match tokio::time::timeout(
-                        Duration::from_secs(120),
+                        Duration::from_secs(180),
                         profile.apply(clients.clone())
                     ).await {
                         Ok(result) => result,

@@ -17,7 +17,7 @@ const POLL_GRACE_PERIOD: u64 = 2; // In seconds
 /// The default request timeout if not long-polling
 const REQUEST_TIMEOUT: u64 = 5; // In seconds
 /// The timeout for the add slaves request
-const REQUEST_TIMEOUT_ADD_SLAVES: u64 = 90; // In seconds
+const REQUEST_TIMEOUT_ADD_SLAVES: u64 = 120; // In seconds
 const DEFAULT_DEVICE_PORT: u16 = 11000;
 
 trait RequestBuilderExt {
