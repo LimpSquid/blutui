@@ -14,7 +14,7 @@ use crate::event::{Event, EventBus};
 const LSDP_PORT: u16 = 11430;
 const STALE_DURATION: Duration = Duration::from_mins(3);
 const REFRESH_INTERVAL_SLOW: Duration = Duration::from_secs(90);
-const REFRESH_INTERVAL_FAST: Duration = Duration::from_secs(5);
+const REFRESH_INTERVAL_FAST: Duration = Duration::from_secs(10);
 const REFRESH_REPEAT_N_TIMES: usize = 3;
 const REFRESH_REPEAT_INTERVAL: Duration = Duration::from_secs(1);
 
