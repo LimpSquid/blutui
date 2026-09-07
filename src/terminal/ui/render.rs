@@ -4,7 +4,7 @@ use chrono::{Duration, Utc};
 use itertools::Itertools;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin, Rect, Spacing};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::{Style, Styled, Stylize};
 use ratatui::symbols::merge::MergeStrategy;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::canvas::Canvas;
@@ -204,6 +204,13 @@ fn render_keybindings(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             ("e", "Edit"),
             ("d", "Delete"),
             ("ENTER", "Apply"),
+            ("TAB", "Change Tab"),
+            ("q", "Quit"),
+        ],
+        WindowFocus::Tabs if ctx.ui.selected_tab == Tab::Audio => vec![
+            ("SPACEBAR", "Change Focus"),
+            ("🡳/🡱/HOME/END", "Selection"),
+            ("j/l", "Volume Up/Down"),
             ("TAB", "Change Tab"),
             ("q", "Quit"),
         ],
@@ -675,12 +682,23 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         let volume_chart = BarChart::horizontal(
             ctx.state
                 .sorted_device_state_iter()
-                .map(|(device_id, device)| match device.volume.as_ref() {
-                    Some(volume) => {
-                        Bar::with_label(format!("{:.1} db", volume.db), volume.volume as u64)
-                            .fg(uuid_to_color(*device_id))
+                .map(|(device_id, device)| {
+                    let selected = ctx.ui.selected_device.is_some_and(|id| *device_id == id);
+
+                    match device.volume.as_ref() {
+                        Some(volume) => Bar::with_label(
+                            format!("{:.1} db", volume.db)
+                                .set_style(if selected {
+                                    Style::new().bg(ctx.ui.stylesheet.accent_color_dark).bold()
+                                } else {
+                                    Style::new().bg(ctx.ui.stylesheet.background_color)
+                                })
+                                .fg(ctx.ui.stylesheet.text_color),
+                            volume.volume as u64,
+                        )
+                        .fg(uuid_to_color(*device_id)),
+                        None => Bar::new(0),
                     }
-                    None => Bar::new(0),
                 })
                 .collect::<Vec<_>>(),
         )

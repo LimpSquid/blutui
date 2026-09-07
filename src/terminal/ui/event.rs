@@ -116,6 +116,36 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     ui.action(UserAction::EditProfile(profile_id));
                 }
             }
+            (Tabs, KeyCode::Char('l' | 'L')) if ui.selected_tab == Audio => {
+                if let Some(device_id) = ui.selected_device {
+                    ui.action(UserAction::DeviceVolumeUp(device_id));
+                }
+            }
+            (Tabs, KeyCode::Char('j' | 'J')) if ui.selected_tab == Audio => {
+                if let Some(device_id) = ui.selected_device {
+                    ui.action(UserAction::DeviceVolumeDown(device_id));
+                }
+            }
+            (Tabs, KeyCode::Down) if ui.selected_tab == Audio => {
+                ui.selected_device = select_next(
+                    state.sorted_device_state_iter(),
+                    |(id, _)| *id,
+                    ui.selected_device,
+                );
+            }
+            (Tabs, KeyCode::Up) if ui.selected_tab == Audio => {
+                ui.selected_device = select_previous(
+                    state.sorted_device_state_iter(),
+                    |(id, _)| *id,
+                    ui.selected_device,
+                );
+            }
+            (Tabs, KeyCode::Home) if ui.selected_tab == Audio => {
+                ui.selected_device = select_first(state.sorted_device_state_iter(), |(id, _)| *id);
+            }
+            (Tabs, KeyCode::End) if ui.selected_tab == Audio => {
+                ui.selected_device = select_last(state.sorted_device_state_iter(), |(id, _)| *id);
+            }
 
             (DiscoveredDevices, KeyCode::Char('r' | 'R')) => ui.action(UserAction::RefreshDevices),
             (DiscoveredDevices, KeyCode::Char('l' | 'L')) => {

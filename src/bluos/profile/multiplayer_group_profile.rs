@@ -83,6 +83,9 @@ impl MultiplayerGroupProfileSlave {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MultiplayerGroupProfile {
     pub master: DeviceId,
+    /// Node name, if `None` use the current name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_name: Option<String>,
     /// Audio preset, if `None` use the current audio preset value.
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,9 +96,9 @@ pub struct MultiplayerGroupProfile {
     /// The source selection of this group, if `None` use the current source selection
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceSelection>,
-    pub slaves: Vec<MultiplayerGroupProfileSlave>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_name: Option<String>,
+    pub slaves: Vec<MultiplayerGroupProfileSlave>,
     /// Extra devices to ungroup. In certain cases we cannot determine
     /// which devices need to be ungrouped to form the new group specified
     /// by this profile. For example a device that is currently part of a
@@ -152,6 +155,9 @@ impl MultiplayerGroupProfile {
             "duplicate slave node name specified"
         );
 
+        if let Some(node_name) = self.node_name.as_deref() {
+            validate_name(node_name)?;
+        }
         if let Some(group_name) = self.group_name.as_deref() {
             validate_name(group_name)?;
         }
@@ -439,6 +445,9 @@ impl MultiplayerGroupProfile {
                 State::ConfigureMaster => {
                     let client = try_find_client_by_id(&clients, &self.master)?;
 
+                    if let Some(node_name) = self.node_name.as_deref() {
+                        client.set_node_name(node_name).await?;
+                    }
                     if let Some(brightness) = self.led_brightness {
                         client.set_led_brightness(brightness).await?;
                     }
