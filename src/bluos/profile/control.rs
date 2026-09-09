@@ -1,10 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
 
 use super::super::client::HttpClient;
-use super::common::SharedClientMap;
+use super::common::{Profile as _, SharedClientMap};
 use super::device_profile::DeviceProfile;
 use super::group_profile::GroupProfile;
 use super::multiplayer_group_profile::MultiplayerGroupProfile;
@@ -21,16 +22,20 @@ pub enum Profile {
 impl Profile {
     pub fn validate(&self) -> anyhow::Result<()> {
         match self {
-            Self::Device(p) => p.validate()?,
-            Self::Group(p) => p.validate()?,
-            Self::MultiplayerGroup(p) => p.validate()?,
+            Self::Device(p) => p.validate().context("device profile invalid")?,
+            Self::Group(p) => p.validate().context("group profile invalid")?,
+            Self::MultiplayerGroup(p) => {
+                p.validate().context("multiplayer group profile invalid")?
+            }
         }
 
         Ok(())
     }
 
     #[tracing::instrument(err, skip_all)]
-    async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
+    async fn validate_and_apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
+        self.validate()?;
+
         match self {
             Self::Device(p) => p.apply(clients).await,
             Self::Group(p) => p.apply(clients).await,
@@ -62,7 +67,7 @@ async fn queue_processor(
                     event_bus.publish_lossy(Event::ProfileTransitionStarted);
                     let result = match tokio::time::timeout(
                         Duration::from_secs(180),
-                        profile.apply(clients.clone())
+                        profile.validate_and_apply(clients.clone())
                     ).await {
                         Ok(result) => result,
                         Err(_) => Err(anyhow::anyhow!("failed to apply profile in time")),

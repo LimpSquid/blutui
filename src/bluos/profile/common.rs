@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use futures::StreamExt;
@@ -113,6 +115,175 @@ impl SourceSelection {
                 anyhow::ensure!(input.is_ascii(), "input contains non ASCII chars");
             }
             Self::Preset { preset_id } => anyhow::ensure!(*preset_id > 0, "preset id must be > 0"),
+        }
+
+        Ok(())
+    }
+
+    pub async fn apply(
+        &self,
+        clients: &ClientMap,
+        facts: &FactMap,
+        device_id: &DeviceId,
+    ) -> anyhow::Result<()> {
+        match self {
+            SourceSelection::Input { input } => {
+                let (device, facts) = (
+                    try_find_client_by_id(clients, device_id)?,
+                    try_find_facts_by_id(facts, device_id)?,
+                );
+                let play_url = facts
+                    .input_selection
+                    .find_input(input)
+                    .map(|i| i.url.clone())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "invalid input selection, available: {}",
+                            facts.input_selection.list_inputs()
+                        )
+                    })?;
+                device.play(Some(play_url)).await?;
+            }
+            SourceSelection::Preset { preset_id } => {
+                let device = try_find_client_by_id(clients, device_id)?;
+                device.load_preset(*preset_id).await?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub async fn ungroup_slaves_from_master(
+    device_ids: impl Iterator<Item = DeviceId>,
+    facts: &FactMap,
+    clients: &ClientMap,
+) -> anyhow::Result<()> {
+    for ((master_ip, master_port), endpoints_to_remove) in device_ids
+        .filter_map(|device_id| try_find_facts_by_id(facts, &device_id).ok())
+        .filter(|s| s.group_status.am_i_slave())
+        .filter_map(|s| {
+            let m = s.group_status.master.as_ref()?;
+            Some(((m.ip_addr, m.port), s.group_status.id))
+        })
+        .fold(
+            HashMap::<_, Vec<_>>::new(),
+            |mut acc, (master_of_slave, slave)| {
+                acc.entry(master_of_slave).or_default().push(slave);
+                acc
+            },
+        )
+    {
+        try_find_client_by_ip_and_port(clients, master_ip, master_port)?
+            .remove_slaves(&endpoints_to_remove)
+            .await?;
+    }
+
+    Ok(())
+}
+
+pub async fn ungroup_masters(
+    device_ids: impl Iterator<Item = DeviceId>,
+    facts: &FactMap,
+    clients: &ClientMap,
+) -> anyhow::Result<()> {
+    for ((master_ip, master_port), endpoints_to_remove) in device_ids
+        .filter_map(|device_id| try_find_facts_by_id(facts, &device_id).ok())
+        .filter(|s| s.group_status.am_i_master())
+        .map(|s| {
+            (
+                s.group_status.id,
+                s.group_status
+                    .slave
+                    .iter()
+                    .map(|s| (s.ip_addr, *s.port))
+                    .chain(
+                        s.group_status
+                            .zone_slave
+                            .iter()
+                            .map(|s| (s.ip_addr, *s.port)),
+                    )
+                    .collect::<Vec<_>>(),
+            )
+        })
+    {
+        try_find_client_by_ip_and_port(clients, master_ip, master_port)?
+            .remove_slaves(&endpoints_to_remove)
+            .await?;
+    }
+
+    Ok(())
+}
+
+pub trait Profile {
+    fn validate(&self) -> anyhow::Result<()>;
+
+    async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()>;
+}
+
+pub(super) enum NextState<S> {
+    Immediate(S),
+    After(Duration, S),
+    Finished,
+}
+
+pub(super) trait StateMachine {
+    type State: Default + Debug + PartialEq + Send + 'static;
+
+    /// Run a single state
+    async fn run_state(
+        &self,
+        state: &Self::State,
+        facts: &FactMap,
+        clients: &ClientMap,
+        transition_time_point: Instant,
+    ) -> anyhow::Result<NextState<Self::State>>;
+
+    /// Indicate wheter we should regather facts for a given state. By default
+    /// for every state machine iteration we regather device facts
+    fn should_regather_facts(_: &Self::State) -> bool {
+        true
+    }
+
+    /// Run the state machine
+    async fn run(self, clients: SharedClientMap) -> anyhow::Result<()>
+    where
+        Self: Sized,
+    {
+        let mut state = Self::State::default();
+        let mut transition_time_point = Instant::now();
+
+        loop {
+            let clients = clients.read().await.to_owned();
+            let facts = if Self::should_regather_facts(&state) {
+                DeviceFacts::gather_for_all(clients.clone()).await?
+            } else {
+                FactMap::default()
+            };
+
+            tracing::debug!(?state, ?facts, "executing state");
+
+            let next_state = self
+                .run_state(&state, &facts, &clients, transition_time_point)
+                .await?;
+
+            match next_state {
+                NextState::Finished => break,
+                NextState::After(duration, next_state) => {
+                    tokio::time::sleep(duration).await;
+
+                    if state != next_state {
+                        state = next_state;
+                        transition_time_point = Instant::now();
+                    }
+                }
+                NextState::Immediate(next_state) => {
+                    if state != next_state {
+                        state = next_state;
+                        transition_time_point = Instant::now();
+                    }
+                }
+            }
         }
 
         Ok(())

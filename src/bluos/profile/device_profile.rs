@@ -1,4 +1,3 @@
-use anyhow::Context;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
@@ -26,8 +25,8 @@ pub struct DeviceProfile {
     pub audio_preset: Option<AudioPreset>,
 }
 
-impl DeviceProfile {
-    pub fn validate(&self) -> anyhow::Result<()> {
+impl Profile for DeviceProfile {
+    fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
             (MIN_VOLUME_LEVEL..=MAX_VOLUME_LEVEL).contains(&self.volume_level.unwrap_or(0)),
             "invalid volume level (allowed: {MIN_VOLUME_LEVEL} - {MAX_VOLUME_LEVEL})"
@@ -64,9 +63,7 @@ impl DeviceProfile {
     }
 
     #[tracing::instrument(err, skip_all)]
-    pub(super) async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
-        self.validate().context("device profile invalid")?;
-
+    async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
         let clients = clients.read().await.to_owned();
         let client = try_find_client_by_id(&clients, &self.device_id)?;
 

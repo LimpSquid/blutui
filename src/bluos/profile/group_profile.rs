@@ -1,12 +1,8 @@
-use std::collections::HashMap;
-use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
-use tokio::time::sleep;
 
 use super::super::client::ZoneMode;
 use super::super::protocol::{AudioPreset, LedBrightness};
@@ -14,13 +10,9 @@ use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
 use super::common::*;
 use crate::types::DeviceId;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum State {
-    Wait {
-        duration: Duration,
-        next_state: Box<Self>,
-    },
-
+#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum State {
+    #[default]
     Check,
     UngroupSlaves,
     UngroupMasters,
@@ -30,22 +22,6 @@ enum State {
     // NB: process this state after configuring the input. Input selection changes
     // implicitly also cause audio preset changes in bluesound devices.
     Configure,
-    Finished,
-}
-
-impl State {
-    fn should_gather_facts(&self) -> bool {
-        match self {
-            Self::Check
-            | Self::UngroupSlaves
-            | Self::UngroupMasters
-            | Self::Group
-            | Self::ConfigureInput
-            | Self::Configure
-            | Self::WaitForDevices => true,
-            Self::Wait { .. } | Self::Finished => false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -121,20 +97,27 @@ pub struct GroupProfile {
 }
 
 impl GroupProfile {
-    pub fn validate(&self) -> anyhow::Result<()> {
-        // Must be one slave in the group
+    fn device_ids(&self) -> impl Iterator<Item = DeviceId> {
+        self.slaves
+            .iter()
+            .chain(std::iter::once(&self.master))
+            .map(|s| s.device_id)
+            .chain(self.ungroup_extra.iter().flatten().copied())
+    }
+}
+
+impl Profile for GroupProfile {
+    fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
             !self.slaves.is_empty(),
             "at least one slave needs to be specified"
         );
 
-        // Validate devices
         self.slaves
             .iter()
             .chain(std::iter::once(&self.master))
             .try_for_each(GroupProfileDevice::validate)?;
 
-        // Master cannot be specified in slaves
         anyhow::ensure!(
             self.slaves
                 .iter()
@@ -143,7 +126,6 @@ impl GroupProfile {
             "master device is also specified in slaves"
         );
 
-        // There can be no duplicate slaves
         anyhow::ensure!(
             self.slaves.iter().unique_by(|s| s.device_id).count() == self.slaves.len(),
             "duplicate slave specified"
@@ -157,239 +139,136 @@ impl GroupProfile {
     }
 
     #[tracing::instrument(err, skip_all)]
-    pub(super) async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
-        self.validate().context("group profile invalid")?;
+    async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
+        self.run(clients).await
+    }
+}
 
-        let mut statemachine = State::Check;
-        let mut transition_time_point = Instant::now();
+impl StateMachine for GroupProfile {
+    type State = State;
 
-        loop {
-            let clients = clients.read().await.to_owned();
-            let facts = if statemachine.should_gather_facts() {
-                DeviceFacts::gather_for_all(clients.clone()).await?
-            } else {
-                Default::default()
-            };
-
-            tracing::debug!(?statemachine, ?facts, "executing step");
-
-            let next_state = match &statemachine {
-                State::Wait {
-                    duration,
-                    next_state,
-                } => {
-                    anyhow::ensure!(
-                        !matches!(**next_state, State::Wait { .. }),
-                        "illegal next state"
-                    );
-                    sleep(*duration).await;
-                    next_state.as_ref().to_owned()
-                }
-
-                State::Check => {
-                    if let Ok((master_ip, master_port)) =
-                        try_find_client_by_id(&clients, &self.master.device_id)
-                            .map(|m| m.ip_and_port())
-                    {
-                        let master = try_find_facts_by_id(&facts, &self.master.device_id)?;
-                        if master.group_status.zone_slave.is_empty() // Must not be part of a fixed zone group
-                            && self.slaves.len() == master.group_status.slave.len()
-                            && self.slaves.iter().all(|s| {
-                                match try_find_facts_by_id(&facts, &s.device_id) {
-                                    Ok(f) => {
-                                        f.group_status.am_i_slave()
-                                            && f.group_status.master.as_ref().is_some_and(|m| {
-                                                m.ip_addr == master_ip && m.port == master_port
-                                            })
-                                    }
-                                    Err(_) => false,
+    async fn run_state(
+        &self,
+        state: &Self::State,
+        facts: &FactMap,
+        clients: &ClientMap,
+        transition_time_point: Instant,
+    ) -> anyhow::Result<NextState<Self::State>> {
+        match state {
+            State::Check => {
+                if let Ok((master_ip, master_port)) =
+                    try_find_client_by_id(clients, &self.master.device_id).map(|m| m.ip_and_port())
+                {
+                    let master = try_find_facts_by_id(facts, &self.master.device_id)?;
+                    if master.group_status.zone_slave.is_empty()
+                        && self.slaves.len() == master.group_status.slave.len()
+                        && self.slaves.iter().all(|s| {
+                            match try_find_facts_by_id(facts, &s.device_id) {
+                                Ok(f) => {
+                                    f.group_status.am_i_slave()
+                                        && f.group_status.master.as_ref().is_some_and(|m| {
+                                            m.ip_addr == master_ip && m.port == master_port
+                                        })
                                 }
-                            })
-                        {
-                            // Group is already correct, skip grouping step
-                            State::ConfigureInput
-                        } else {
-                            // Group is incorrect, try and ungroup devices
-                            State::UngroupSlaves
-                        }
+                                Err(_) => false,
+                            }
+                        })
+                    {
+                        Ok(NextState::Immediate(State::ConfigureInput))
                     } else {
-                        // Master not found, try and ungroup devices
-                        State::UngroupSlaves
+                        Ok(NextState::Immediate(State::UngroupSlaves))
+                    }
+                } else {
+                    Ok(NextState::Immediate(State::UngroupSlaves))
+                }
+            }
+            State::UngroupSlaves => {
+                ungroup_slaves_from_master(self.device_ids(), facts, clients).await?;
+
+                Ok(NextState::After(
+                    Duration::from_secs(1),
+                    State::UngroupMasters,
+                ))
+            }
+            State::UngroupMasters => {
+                ungroup_masters(self.device_ids(), facts, clients).await?;
+
+                Ok(NextState::Immediate(State::WaitForDevices))
+            }
+            State::WaitForDevices => {
+                let not_found: Vec<_> = self
+                    .slaves
+                    .iter()
+                    .chain(std::iter::once(&self.master))
+                    .map(|s| s.device_id)
+                    // Wait until device is reachable
+                    .filter(|device_id| try_find_facts_by_id(&facts, device_id).is_err())
+                    .collect();
+
+                if not_found.is_empty() {
+                    Ok(NextState::Immediate(State::Group))
+                } else {
+                    anyhow::ensure!(
+                        transition_time_point.elapsed() < Duration::from_secs(90),
+                        "timeout waiting on devices to become available, not found: {}",
+                        not_found.into_iter().join(", ")
+                    );
+
+                    Ok(NextState::After(
+                        Duration::from_secs(5),
+                        State::WaitForDevices,
+                    ))
+                }
+            }
+            State::Group => {
+                let endpoints_to_add: Vec<_> = self
+                    .slaves
+                    .iter()
+                    .filter_map(|s| try_find_client_by_id(clients, &s.device_id).ok())
+                    .map(|client| client.ip_and_port())
+                    .collect();
+
+                anyhow::ensure!(!endpoints_to_add.is_empty(), "no devices found to group");
+
+                try_find_client_by_id(clients, &self.master.device_id)?
+                    .add_slaves(&endpoints_to_add, ZoneMode::Group { group_name: None })
+                    .await?;
+
+                Ok(NextState::After(
+                    Duration::from_secs(5),
+                    State::ConfigureInput,
+                ))
+            }
+            State::ConfigureInput => {
+                if let Some(source) = self.source.as_ref() {
+                    source.apply(clients, facts, &self.master.device_id).await?;
+                }
+
+                Ok(NextState::Immediate(State::Configure))
+            }
+            State::Configure => {
+                for (client, profile) in self
+                    .slaves
+                    .iter()
+                    .chain(std::iter::once(&self.master))
+                    .filter_map(|p| Some((try_find_client_by_id(clients, &p.device_id).ok()?, p)))
+                {
+                    if let Some(brightness) = profile.led_brightness {
+                        client.set_led_brightness(brightness).await?;
+                    }
+                    if let Some(node_name) = profile.node_name.as_deref() {
+                        client.set_node_name(node_name).await?;
+                    }
+                    if let Some(level) = profile.volume_level {
+                        client.set_volume_level(level, false).await?;
+                    }
+                    if let Some(audio_preset) = profile.audio_preset {
+                        client.set_audio_preset(audio_preset).await?;
                     }
                 }
-                State::UngroupSlaves => {
-                    for ((master_ip, master_port), endpoints_to_remove) in self
-                        .slaves
-                        .iter()
-                        .chain(std::iter::once(&self.master))
-                        .map(|s| s.device_id)
-                        .chain(self.ungroup_extra.clone().unwrap_or_default())
-                        .filter_map(|device_id| try_find_facts_by_id(&facts, &device_id).ok())
-                        // NB: should not be needed, but makes the context clear
-                        .filter(|s| s.group_status.am_i_slave())
-                        .filter_map(|s| {
-                            let m = s.group_status.master.as_ref()?;
-                            Some(((m.ip_addr, m.port), s.group_status.id))
-                        })
-                        .fold(
-                            HashMap::<_, Vec<_>>::new(),
-                            |mut acc, (master_of_slave, slave)| {
-                                acc.entry(master_of_slave).or_default().push(slave);
-                                acc
-                            },
-                        )
-                    {
-                        // Remove slaves from the master node
-                        try_find_client_by_ip_and_port(&clients, master_ip, master_port)?
-                            .remove_slaves(&endpoints_to_remove)
-                            .await?;
-                    }
 
-                    State::Wait {
-                        duration: Duration::from_secs(1),
-                        next_state: Box::new(State::UngroupMasters),
-                    }
-                }
-                State::UngroupMasters => {
-                    for ((master_ip, master_port), endpoints_to_remove) in self
-                        .slaves
-                        .iter()
-                        .chain(std::iter::once(&self.master))
-                        .map(|s| s.device_id)
-                        .chain(self.ungroup_extra.clone().unwrap_or_default())
-                        .filter_map(|device_id| try_find_facts_by_id(&facts, &device_id).ok())
-                        .filter(|s| s.group_status.am_i_master())
-                        .map(|s| {
-                            (
-                                s.group_status.id,
-                                s.group_status
-                                    .slave
-                                    .iter()
-                                    .map(|s| (s.ip_addr, *s.port))
-                                    .chain(
-                                        s.group_status
-                                            .zone_slave
-                                            .iter()
-                                            .map(|s| (s.ip_addr, *s.port)),
-                                    )
-                                    .collect::<Vec<_>>(),
-                            )
-                        })
-                    {
-                        // Remove all slaves from the master node
-                        try_find_client_by_ip_and_port(&clients, master_ip, master_port)?
-                            .remove_slaves(&endpoints_to_remove)
-                            .await?;
-                    }
-
-                    State::WaitForDevices
-                }
-                State::WaitForDevices => {
-                    let not_found: Vec<_> = self
-                        .slaves
-                        .iter()
-                        .chain(std::iter::once(&self.master))
-                        .map(|s| s.device_id)
-                        // Wait until device is reachable
-                        .filter(|device_id| try_find_facts_by_id(&facts, device_id).is_err())
-                        .collect();
-
-                    if not_found.is_empty() {
-                        State::Group
-                    } else {
-                        anyhow::ensure!(
-                            transition_time_point.elapsed() < Duration::from_secs(90),
-                            "timeout waiting on devices to become available, not found: {}",
-                            not_found.into_iter().join(", ")
-                        );
-
-                        sleep(Duration::from_secs(5)).await;
-                        State::WaitForDevices
-                    }
-                }
-                State::Group => {
-                    // Map slave to endpoints to add to the master node
-                    let endpoints_to_add: Vec<_> = self
-                        .slaves
-                        .iter()
-                        .filter_map(|s| try_find_client_by_id(&clients, &s.device_id).ok())
-                        .map(|client| client.ip_and_port())
-                        .collect();
-
-                    anyhow::ensure!(!endpoints_to_add.is_empty(), "no devices found to group");
-
-                    // Add slaves to the master node
-                    try_find_client_by_id(&clients, &self.master.device_id)?
-                        .add_slaves(&endpoints_to_add, ZoneMode::Group { group_name: None })
-                        .await?;
-
-                    State::Wait {
-                        duration: Duration::from_secs(5), // Give some time to settle
-                        next_state: Box::new(State::ConfigureInput),
-                    }
-                }
-                State::ConfigureInput => {
-                    match self.source.as_ref() {
-                        Some(SourceSelection::Input { input }) => {
-                            let (master, facts) = (
-                                try_find_client_by_id(&clients, &self.master.device_id)?,
-                                try_find_facts_by_id(&facts, &self.master.device_id)?,
-                            );
-                            let play_url = facts
-                                .input_selection
-                                .find_input(input)
-                                .map(|i| i.url.clone())
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!(
-                                        "invalid input selection, available: {}",
-                                        facts.input_selection.list_inputs()
-                                    )
-                                })?;
-                            master.play(Some(play_url)).await?;
-                        }
-                        Some(SourceSelection::Preset { preset_id }) => {
-                            let master = try_find_client_by_id(&clients, &self.master.device_id)?;
-                            master.load_preset(*preset_id).await?;
-                        }
-                        None => {}
-                    }
-
-                    State::Configure
-                }
-                State::Configure => {
-                    for (client, profile) in self
-                        .slaves
-                        .iter()
-                        .chain(std::iter::once(&self.master))
-                        .filter_map(|p| {
-                            Some((try_find_client_by_id(&clients, &p.device_id).ok()?, p))
-                        })
-                    {
-                        if let Some(brightness) = profile.led_brightness {
-                            client.set_led_brightness(brightness).await?;
-                        }
-                        if let Some(node_name) = profile.node_name.as_deref() {
-                            client.set_node_name(node_name).await?;
-                        }
-                        if let Some(level) = profile.volume_level {
-                            client.set_volume_level(level, false).await?;
-                        }
-                        if let Some(audio_preset) = profile.audio_preset {
-                            client.set_audio_preset(audio_preset).await?;
-                        }
-                    }
-
-                    State::Finished
-                }
-                State::Finished => break,
-            };
-
-            if statemachine != next_state {
-                statemachine = next_state;
-                transition_time_point = Instant::now();
+                Ok(NextState::Finished)
             }
         }
-
-        Ok(())
     }
 }
