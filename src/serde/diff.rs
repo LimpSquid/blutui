@@ -46,8 +46,8 @@ impl fmt::Display for JsonDiff {
 pub fn json_diff<T: Serialize>(a: &T, b: &T) -> JsonDiff {
     use serde_json::{Value, to_value};
 
-    let a = to_value(a).unwrap();
-    let b = to_value(b).unwrap();
+    let a = to_value(a).unwrap_or_default();
+    let b = to_value(b).unwrap_or_default();
 
     let mut out = Vec::new();
     let mut stack = vec![("".to_string(), &a, &b)];

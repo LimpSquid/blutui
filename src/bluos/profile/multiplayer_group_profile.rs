@@ -10,7 +10,7 @@ use tokio::time::sleep;
 
 use super::super::client::ZoneMode;
 use super::common::*;
-use crate::bluos::{AudioPreset, LedBrightness};
+use crate::bluos::{AudioPreset, LedBrightness, MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
 use crate::types::DeviceId;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -83,6 +83,9 @@ impl MultiplayerGroupProfileSlave {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MultiplayerGroupProfile {
     pub master: DeviceId,
+    /// Volume level 0 - 100, if `None` use the current level
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_level: Option<u8>,
     /// Node name, if `None` use the current name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub node_name: Option<String>,
@@ -117,6 +120,11 @@ pub struct MultiplayerGroupProfile {
 
 impl MultiplayerGroupProfile {
     pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (MIN_VOLUME_LEVEL..=MAX_VOLUME_LEVEL).contains(&self.volume_level.unwrap_or(0)),
+            "invalid volume level (allowed: {MIN_VOLUME_LEVEL} - {MAX_VOLUME_LEVEL})"
+        );
+
         // Must be one slave in the group
         anyhow::ensure!(
             !self.slaves.is_empty(),
@@ -445,6 +453,9 @@ impl MultiplayerGroupProfile {
                 State::ConfigureMaster => {
                     let client = try_find_client_by_id(&clients, &self.master)?;
 
+                    if let Some(volume_level) = self.volume_level {
+                        client.set_volume_level(volume_level, false).await?;
+                    }
                     if let Some(node_name) = self.node_name.as_deref() {
                         client.set_node_name(node_name).await?;
                     }
