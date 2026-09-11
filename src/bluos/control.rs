@@ -123,11 +123,10 @@ async fn processor(
                     }
                     _ => {
                         for ActionRequest { device_id, action } in action_buf.drain(..) {
-                            if let Some(processor) = processor_handles.get(&device_id) {
-                                if let Err(error) = processor.send(action).await {
+                            if let Some(processor) = processor_handles.get(&device_id)
+                                && let Err(error) = processor.send(action).await {
                                     tracing::warn!(?error, "failed to process action");
                                 }
-                            }
                         }
                     },
                 },

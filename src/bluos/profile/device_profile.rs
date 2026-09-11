@@ -33,7 +33,7 @@ impl Profile for DeviceProfile {
         );
 
         if let Some(node_name) = self.node_name.as_deref() {
-            anyhow::ensure!(node_name.len() > 0, "node name must be atleast one char");
+            anyhow::ensure!(!node_name.is_empty(), "node name must be atleast one char");
             anyhow::ensure!(
                 node_name.len() <= 32,
                 "node name must be 32 chars at maximum"

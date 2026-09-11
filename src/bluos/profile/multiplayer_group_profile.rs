@@ -224,7 +224,7 @@ impl StateMachine for MultiplayerGroupProfile {
                     .map(|s| &s.device_id)
                     .chain(std::iter::once(&self.master))
                     // Wait until device is reachable
-                    .filter(|device_id| try_find_facts_by_id(&facts, device_id).is_err())
+                    .filter(|device_id| try_find_facts_by_id(facts, device_id).is_err())
                     .collect();
 
                 if not_found.is_empty() {
@@ -255,7 +255,7 @@ impl StateMachine for MultiplayerGroupProfile {
 
                 for slave in self.slaves.iter().map(|s| &s.device_id) {
                     anyhow::ensure!(
-                        try_find_facts_by_id(facts, &slave)?
+                        try_find_facts_by_id(facts, slave)?
                             .group_status
                             .zone_options
                             .as_ref()

@@ -162,7 +162,7 @@ pub fn render(frame: &mut Frame, state: &AppState, ui: &mut Ui) {
 fn render_busy_indicator(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     if !ctx.state.busy_flags.is_empty() {
         ctx.frame.render_widget(
-            Span::from("●".fg(ctx.ui.stylesheet.highlight_color)),
+            "●".fg(ctx.ui.stylesheet.highlight_color),
             Rect::new(area.width.max(1) - 1, area.height.max(1) - 1, 1, 1),
         );
     }
@@ -289,7 +289,7 @@ fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect)
                 }
 
                 vec![Line::from(vec![
-                    format!("{device_name}").fg(ctx.ui.stylesheet.text_color),
+                    device_name.to_string().fg(ctx.ui.stylesheet.text_color),
                     format!(" ({device_model})").fg(ctx.ui.stylesheet.text_color_sub),
                     if let Some((group_color, group_status)) = group_status
                         .as_ref()
@@ -361,7 +361,7 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 diagnostics.as_ref().map(|d| {
                     match (d.connected_to_network.as_ref(), d.signal_strength.as_ref()) {
                         (Some(ctn), Some(ss)) => format!("{ctn} ({ss})"),
-                        (Some(ctn), None) => format!("{ctn}"),
+                        (Some(ctn), None) => ctn.to_string(),
                         (_, _) => "N/A".to_string(),
                     }
                 }),
@@ -392,8 +392,8 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 .as_ref()
                 .map(|s| match (s.title1.as_ref(), s.title2.as_ref()) {
                     (Some(t1), Some(t2)) => format!("{t1} • {t2}"),
-                    (Some(t1), None) => format!("{t1}"),
-                    (None, Some(a)) => format!("{a}"),
+                    (Some(t1), None) => t1.to_string(),
+                    (None, Some(a)) => a.to_string(),
                     (None, None) => "N/A".to_string(),
                 }),
         ));

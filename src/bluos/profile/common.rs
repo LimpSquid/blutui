@@ -18,7 +18,7 @@ pub type SharedClientMap = Arc<RwLock<ClientMap>>;
 pub type FactMap = HashMap<DeviceId, DeviceFacts>;
 
 pub fn validate_name(node_name: &str) -> anyhow::Result<()> {
-    anyhow::ensure!(node_name.len() > 0, "node name must be atleast one char");
+    anyhow::ensure!(!node_name.is_empty(), "node name must be atleast one char");
     anyhow::ensure!(
         node_name.len() <= 32,
         "node name must be 32 chars at maximum"

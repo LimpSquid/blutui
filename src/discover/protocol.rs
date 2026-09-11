@@ -14,7 +14,7 @@ struct Field<'a>(&'a [u8]);
 
 impl<'a> Field<'a> {
     fn decode(data: &'a [u8]) -> anyhow::Result<(&'a [u8], Self)> {
-        anyhow::ensure!(data.len() >= 1, "insufficient data");
+        anyhow::ensure!(!data.is_empty(), "insufficient data");
         let len = data[0] as usize;
         let data = &data[1..];
         anyhow::ensure!(data.len() >= len, "insufficient data");
@@ -38,7 +38,7 @@ impl<T> Records<T> {
     where
         F: Fn(&[u8]) -> anyhow::Result<(&[u8], T)>,
     {
-        anyhow::ensure!(data.len() >= 1, "insufficient data");
+        anyhow::ensure!(!data.is_empty(), "insufficient data");
 
         let count = data[0] as usize;
         let mut data = &data[1..];
@@ -216,7 +216,7 @@ impl AnnounceMessage {
     }
 
     fn decode(data: &[u8]) -> anyhow::Result<(&[u8], Self)> {
-        anyhow::ensure!(data.len() >= 1, "insufficient data");
+        anyhow::ensure!(!data.is_empty(), "insufficient data");
 
         let (data, node_id) = Field::decode(data)?;
         let (data, ip_addr) = Field::decode(data)?;
@@ -295,7 +295,7 @@ impl DeleteMessage {
     }
 
     fn decode(data: &[u8]) -> anyhow::Result<(&[u8], Self)> {
-        anyhow::ensure!(data.len() >= 1, "insufficient data");
+        anyhow::ensure!(!data.is_empty(), "insufficient data");
 
         let (data, node_id) = Field::decode(data)?;
         let (data, classes) = Records::decode(data, DeviceClass::decode)?;

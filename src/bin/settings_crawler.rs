@@ -176,25 +176,25 @@ fn parse_xml(xml: &str) -> anyhow::Result<Vec<Node>> {
 
 async fn crawl_nodes(nodes: &mut [Node], client: &mut HttpClient) -> anyhow::Result<()> {
     for node in nodes.iter_mut() {
-        if node.r#type == NodeType::MenuGroup {
-            if let Some(id) = node.attributes.get("id") {
-                let xml = client.get_settings_xml(Some(id.as_str())).await?;
-                let mut menu_group_nodes = parse_xml(&xml)?;
+        if node.r#type == NodeType::MenuGroup
+            && let Some(id) = node.attributes.get("id")
+        {
+            let xml = client.get_settings_xml(Some(id.as_str())).await?;
+            let mut menu_group_nodes = parse_xml(&xml)?;
 
-                if let Some(menu_group) = menu_group_nodes.first_mut() {
-                    node.children = menu_group
-                        .children
-                        .iter_mut()
-                        .find(|n| {
-                            n.r#type == NodeType::MenuGroup
-                                && n.attributes
-                                    .get("id")
-                                    .map(|s| s.as_str())
-                                    .is_some_and(|s| s == id)
-                        })
-                        .map(|node| std::mem::take(&mut node.children))
-                        .unwrap_or_else(|| std::mem::take(&mut menu_group.children));
-                }
+            if let Some(menu_group) = menu_group_nodes.first_mut() {
+                node.children = menu_group
+                    .children
+                    .iter_mut()
+                    .find(|n| {
+                        n.r#type == NodeType::MenuGroup
+                            && n.attributes
+                                .get("id")
+                                .map(|s| s.as_str())
+                                .is_some_and(|s| s == id)
+                    })
+                    .map(|node| std::mem::take(&mut node.children))
+                    .unwrap_or_else(|| std::mem::take(&mut menu_group.children));
             }
         }
 

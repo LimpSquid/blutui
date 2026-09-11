@@ -202,7 +202,7 @@ impl StateMachine for GroupProfile {
                     .chain(std::iter::once(&self.master))
                     .map(|s| s.device_id)
                     // Wait until device is reachable
-                    .filter(|device_id| try_find_facts_by_id(&facts, device_id).is_err())
+                    .filter(|device_id| try_find_facts_by_id(facts, device_id).is_err())
                     .collect();
 
                 if not_found.is_empty() {
