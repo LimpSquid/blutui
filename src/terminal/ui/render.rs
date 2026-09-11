@@ -14,7 +14,7 @@ use ratatui::widgets::{
 };
 use strum::IntoEnumIterator;
 
-use super::{Ui, components::*, stylesheet::*, utils::*};
+use super::{Ui, components::*, theme::*, utils::*};
 use crate::bluos::MAX_VOLUME_LEVEL;
 use crate::terminal::app::{AppState, BusyFlags, DeviceState};
 

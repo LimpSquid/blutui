@@ -18,7 +18,6 @@ const POLL_GRACE_PERIOD: u64 = 2; // In seconds
 const REQUEST_TIMEOUT: u64 = 5; // In seconds
 /// The timeout for the add slaves request
 const REQUEST_TIMEOUT_ADD_SLAVES: u64 = 120; // In seconds
-const DEFAULT_DEVICE_PORT: u16 = 11000;
 
 trait RequestBuilderExt {
     fn poll_opts(self, opts: Option<PollOpts>) -> Self;
@@ -81,17 +80,7 @@ impl HttpClient {
     }
 
     pub fn from_device(device: &Device) -> Self {
-        // NB: We assume that the first `port` field of a physical device is the port used for the API communication
-        let port = device
-            .attributes
-            .iter()
-            .filter(|device| device.class.is_physical())
-            .filter_map(|device| device.fields.get("port"))
-            .filter_map(|port| port.parse().ok())
-            .next()
-            .unwrap_or(DEFAULT_DEVICE_PORT);
-
-        Self::new(device.ip_addr, port)
+        Self::new(device.ip_addr, device.api_port())
     }
 
     pub async fn get_device_status(

@@ -1,7 +1,7 @@
 mod components;
 mod event;
 mod render;
-mod stylesheet;
+mod theme;
 mod utils;
 mod widgets;
 
@@ -44,7 +44,7 @@ pub struct Ui {
     selected_tab: render::Tab,
     window_focus: render::WindowFocus,
     render_start: Instant,
-    stylesheet: stylesheet::Stylesheet,
+    stylesheet: theme::Stylesheet,
 }
 
 impl Ui {

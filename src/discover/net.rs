@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use chrono::Utc;
 use netdev::get_default_interface;
-use tokio::net::UdpSocket;
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::{broadcast, mpsc};
-use tokio::time::{interval, sleep};
+use tokio::time::{interval, sleep, timeout};
 
 use super::protocol::*;
 use crate::event::{Event, EventBus};
@@ -17,6 +17,9 @@ const REFRESH_INTERVAL_SLOW: Duration = Duration::from_secs(90);
 const REFRESH_INTERVAL_FAST: Duration = Duration::from_secs(10);
 const REFRESH_REPEAT_N_TIMES: usize = 3;
 const REFRESH_REPEAT_INTERVAL: Duration = Duration::from_secs(1);
+const TCP_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
+const TCP_PROBE_INTERVAL_SLOW: Duration = Duration::from_secs(60);
+const TCP_PROBE_INTERVAL_FAST: Duration = Duration::from_secs(2);
 
 fn get_default_broadcast_address() -> anyhow::Result<IpAddr> {
     let mut default_iface = get_default_interface().map_err(|e| anyhow::anyhow!(e))?;
@@ -36,6 +39,7 @@ async fn broadcast(socket: &UdpSocket, packet: Packet) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 async fn processor(
     mut query: mpsc::Receiver<QueryMessage>,
     event_bus: EventBus,
@@ -57,6 +61,8 @@ async fn processor(
 
         let mut buf = [0; 1024];
         let mut devices: HashSet<Device> = HashSet::new();
+        let mut event_stream = event_bus.subscribe();
+        let mut tcp_probe_interval = interval(TCP_PROBE_INTERVAL_SLOW);
 
         loop {
             for stale_device in
@@ -70,6 +76,35 @@ async fn processor(
                 _ = cancel.recv() => {
                     tracing::debug!("device discovery terminated");
                     break 'main;
+                }
+                // Handle events
+                event = event_stream.recv() => match event {
+                    Ok(Event::ProfileTransitionStarted) => {
+                        tcp_probe_interval = interval(TCP_PROBE_INTERVAL_FAST);
+                    }
+                    Ok(Event::ProfileTransitionCompleted { .. }) => {
+                        tcp_probe_interval = interval(TCP_PROBE_INTERVAL_SLOW);
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::error!(?error, "event stream error");
+                        continue 'main;
+                    }
+                },
+                // Handle TCP probing
+                _ = tcp_probe_interval.tick() => {
+                    for device in std::mem::take(&mut devices) {
+                        if let Ok(Ok(_)) = timeout(
+                            TCP_CONNECT_TIMEOUT,
+                            TcpStream::connect(format!("{}:{}", device.ip_addr, device.api_port())),
+                        )
+                        .await
+                        {
+                            devices.insert(device);
+                        } else {
+                            event_bus.publish_lossy(Event::DeviceGone(device));
+                        }
+                    }
                 }
                 // Handle query requests
                 x = query.recv() => match x {
@@ -99,7 +134,6 @@ async fn processor(
 
                                     let device = message.into_device(Utc::now());
                                     let network_changed = devices.replace(device.clone()).is_some_and(|d| d.ip_addr != device.ip_addr);
-
                                     if network_changed {
                                         event_bus.publish_lossy(Event::DeviceGone(device.clone()));
                                     }
@@ -131,6 +165,7 @@ async fn processor(
     }
 }
 
+#[tracing::instrument(skip_all)]
 async fn refresher(
     query: mpsc::Sender<QueryMessage>,
     event_bus: EventBus,

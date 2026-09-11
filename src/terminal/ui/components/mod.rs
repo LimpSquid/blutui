@@ -1,7 +1,7 @@
 mod prelude {
     pub use super::super::UserAction;
     pub use super::super::event::{KeyCode, KeyModifiers};
-    pub use super::super::{stylesheet::*, widgets::*};
+    pub use super::super::{theme::*, widgets::*};
     pub use super::DialogEvent;
     pub use ratatui::buffer::Buffer;
     pub use ratatui::layout::Rect;

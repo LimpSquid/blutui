@@ -206,6 +206,7 @@ impl StateMachine for MultiplayerGroupProfile {
             },
             State::UngroupSlaves => {
                 ungroup_slaves_from_master(self.device_ids(), facts, clients).await?;
+
                 Ok(NextState::After(
                     Duration::from_secs(1),
                     State::UngroupMasters,
@@ -213,6 +214,7 @@ impl StateMachine for MultiplayerGroupProfile {
             }
             State::UngroupMasters => {
                 ungroup_masters(self.device_ids(), facts, clients).await?;
+
                 Ok(NextState::Immediate(State::WaitForDevices))
             }
             State::WaitForDevices => {

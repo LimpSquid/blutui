@@ -8,6 +8,7 @@ use crate::types::DeviceId;
 
 const MAGIC_WORD: &[u8; 4] = b"LSDP";
 const PROTOCOL_VERSION: u8 = 1;
+const DEFAULT_DEVICE_API_PORT: u16 = 11000;
 
 struct Field<'a>(&'a [u8]);
 
@@ -321,6 +322,19 @@ pub struct Device {
     pub ip_addr: IpAddr,
     pub attributes: Vec<DeviceAttr>,
     pub last_update: DateTime<Utc>,
+}
+
+impl Device {
+    pub fn api_port(&self) -> u16 {
+        // NB: We assume that the first `port` field of a physical device is the port used for the API communication
+        self.attributes
+            .iter()
+            .filter(|device| device.class.is_physical())
+            .filter_map(|device| device.fields.get("port"))
+            .filter_map(|port| port.parse().ok())
+            .next()
+            .unwrap_or(DEFAULT_DEVICE_API_PORT)
+    }
 }
 
 impl PartialEq for Device {
