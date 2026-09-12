@@ -40,6 +40,18 @@ pub struct GroupProfileDevice {
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_preset: Option<AudioPreset>,
+    /// Treble equalizer offset, if `None` use the current treble equalizer offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub treble_eq: Option<f64>,
+    /// Bass equalizer offset, if `None` use the current bass equalizer offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bass_eq: Option<f64>,
+    /// Center trim offset, if `None` use the current center trim offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub center_trim: Option<f64>,
 }
 
 impl GroupProfileDevice {
@@ -261,6 +273,15 @@ impl StateMachine for GroupProfile {
                     }
                     if let Some(level) = profile.volume_level {
                         client.set_volume_level(level, false).await?;
+                    }
+                    if let Some(db) = profile.treble_eq {
+                        client.set_equalizer_treble(db).await?;
+                    }
+                    if let Some(db) = profile.bass_eq {
+                        client.set_equalizer_bass(db).await?;
+                    }
+                    if let Some(db) = profile.center_trim {
+                        client.set_equalizer_center_trim(db).await?;
                     }
                     if let Some(audio_preset) = profile.audio_preset {
                         client.set_audio_preset(audio_preset).await?;

@@ -252,13 +252,13 @@ pub(super) trait StateMachine {
     {
         let mut state = Self::State::default();
         let mut transition_time_point = Instant::now();
+        let mut facts = FactMap::default();
 
         loop {
             let clients = clients.read().await.to_owned();
-            let facts = if Self::should_regather_facts(&state) {
-                DeviceFacts::gather_for_all(clients.clone()).await?
-            } else {
-                FactMap::default()
+
+            if Self::should_regather_facts(&state) {
+                facts = DeviceFacts::gather_for_all(clients.clone()).await?;
             };
 
             tracing::debug!(?state, ?facts, "executing state");

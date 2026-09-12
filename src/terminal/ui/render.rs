@@ -444,6 +444,18 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         if let Some(audio_preset) = audio_settings.as_ref().and_then(|p| p.audio_preset) {
             data.push(("audio preset".to_string(), Some(audio_preset.to_string())));
         }
+        if let Some(db) = audio_settings.as_ref().and_then(|p| p.equalizer_bass_db) {
+            data.push(("bass eq:".to_string(), Some(format!("{db} dB"))));
+        }
+        if let Some(db) = audio_settings.as_ref().and_then(|p| p.equalizer_treble_db) {
+            data.push(("treble eq:".to_string(), Some(format!("{db} dB"))));
+        }
+        if let Some(db) = audio_settings
+            .as_ref()
+            .and_then(|p| p.equalizer_center_trim_db)
+        {
+            data.push(("center trim:".to_string(), Some(format!("{db} dB"))));
+        }
 
         let data_key_max_len = data
             .iter()

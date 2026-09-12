@@ -29,7 +29,7 @@ pub(super) enum State {
 pub struct MultiplayerGroupProfileSlave {
     pub device_id: DeviceId,
     pub node_name: String,
-    /// Volume trim in mdB
+    /// Volume trim in dB
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volume_trim: Option<f64>,
     /// Led brightness, if `None` use the current brightness
@@ -66,6 +66,18 @@ pub struct MultiplayerGroupProfile {
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_preset: Option<AudioPreset>,
+    /// Treble equalizer offset, if `None` use the current treble equalizer offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub treble_eq: Option<f64>,
+    /// Bass equalizer offset, if `None` use the current bass equalizer offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bass_eq: Option<f64>,
+    /// Center trim offset, if `None` use the current center trim offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub center_trim: Option<f64>,
     /// Led brightness, if `None` use the current brightness
     #[serde(skip_serializing_if = "Option::is_none")]
     pub led_brightness: Option<LedBrightness>,
@@ -372,6 +384,15 @@ impl StateMachine for MultiplayerGroupProfile {
                 // NB: Apply input source before audio preset
                 if let Some(source) = self.source.as_ref() {
                     source.apply(clients, facts, &self.master).await?;
+                }
+                if let Some(db) = self.treble_eq {
+                    client.set_equalizer_treble(db).await?;
+                }
+                if let Some(db) = self.bass_eq {
+                    client.set_equalizer_bass(db).await?;
+                }
+                if let Some(db) = self.center_trim {
+                    client.set_equalizer_center_trim(db).await?;
                 }
                 if let Some(audio_preset) = self.audio_preset {
                     client.set_audio_preset(audio_preset).await?;

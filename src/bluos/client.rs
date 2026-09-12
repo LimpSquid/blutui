@@ -6,9 +6,8 @@ use reqwest::{Client, RequestBuilder, Url};
 use scraper::{Html, Selector};
 use serde::Serialize;
 
-use crate::discover::Device;
-
 use super::protocol::*;
+use crate::discover::Device;
 
 /// The long-polling timeout passed to the BluOS device
 const DEFAULT_POLL_TIMEOUT: u8 = 60; // In seconds
@@ -198,6 +197,14 @@ impl HttpClient {
         let audio_settings = DeviceAudioSettings {
             audio_preset: settings
                 .find_and_then("preset", |s| s.value.as_ref().and_then(|v| v.parse().ok())),
+            equalizer_treble_db: settings.find_and_then("eq-treble", |s| {
+                s.value.as_ref().and_then(|v| v.parse().ok())
+            }),
+            equalizer_bass_db: settings
+                .find_and_then("eq-bass", |s| s.value.as_ref().and_then(|v| v.parse().ok())),
+            equalizer_center_trim_db: settings.find_and_then("eq-centre-trim", |s| {
+                s.value.as_ref().and_then(|v| v.parse().ok())
+            }),
         };
 
         Ok(audio_settings)
@@ -232,6 +239,42 @@ impl HttpClient {
         self.client
             .post(self.api_path("alsa_setting")?)
             .form(&[("preset", preset.to_string())])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
+    pub async fn set_equalizer_treble(&self, db: f64) -> anyhow::Result<()> {
+        self.client
+            .post(self.api_path("alsa_setting")?)
+            .form(&[("eq-treble", format!("{:.2}", db))])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
+    pub async fn set_equalizer_bass(&self, db: f64) -> anyhow::Result<()> {
+        self.client
+            .post(self.api_path("alsa_setting")?)
+            .form(&[("eq-bass", format!("{:.2}", db))])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
+    pub async fn set_equalizer_center_trim(&self, db: f64) -> anyhow::Result<()> {
+        self.client
+            .post(self.api_path("alsa_setting")?)
+            .form(&[("eq-centre-trim", format!("{:.2}", db))])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
             .send()
             .await?

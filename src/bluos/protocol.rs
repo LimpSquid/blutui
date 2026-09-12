@@ -284,6 +284,12 @@ pub struct DeviceInputSelectionItem {
 pub struct DeviceAudioSettings {
     /// NB: Only available on specific devices
     pub audio_preset: Option<AudioPreset>,
+    /// NB: Only available on specific devices
+    pub equalizer_treble_db: Option<f64>,
+    /// NB: Only available on specific devices
+    pub equalizer_bass_db: Option<f64>,
+    /// NB: Only available on specific devices
+    pub equalizer_center_trim_db: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

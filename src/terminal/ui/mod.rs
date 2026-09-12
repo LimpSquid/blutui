@@ -16,7 +16,7 @@ use crate::types::{DeviceId, GroupId, ProfileId};
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
-#[allow(unused)]
+#[allow(unused, clippy::large_enum_variant)]
 pub enum UserAction {
     RefreshDevices,
     DeviceVolumeUp(DeviceId),

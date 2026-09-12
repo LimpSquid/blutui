@@ -65,6 +65,7 @@ async fn queue_processor(
                 }
                 Some(profile) => {
                     event_bus.publish_lossy(Event::ProfileTransitionStarted);
+                    // TODO: allow for Vec<Result<...>> so a profile can continue in case a failure is non fatal
                     let result = match tokio::time::timeout(
                         Duration::from_secs(180),
                         profile.validate_and_apply(clients.clone())
