@@ -205,6 +205,14 @@ impl HttpClient {
             equalizer_center_trim_db: settings.find_and_then("eq-centre-trim", |s| {
                 s.value.as_ref().and_then(|v| v.parse().ok())
             }),
+            surround_upmixer: settings.find_and_then("eq-upmix", |s| {
+                s.value.as_ref().and_then(|v| v.parse().ok())
+            }),
+            volume_leveler: settings.find_and_then("eq-vlamp", |s| {
+                s.value.as_ref().and_then(|v| v.parse().ok())
+            }),
+            virtualizer: settings
+                .find_and_then("eq-virt", |s| s.value.as_ref().and_then(|v| v.parse().ok())),
         };
 
         Ok(audio_settings)

@@ -445,16 +445,28 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             data.push(("audio preset".to_string(), Some(audio_preset.to_string())));
         }
         if let Some(db) = audio_settings.as_ref().and_then(|p| p.equalizer_bass_db) {
-            data.push(("bass eq:".to_string(), Some(format!("{db} dB"))));
+            data.push(("bass eq".to_string(), Some(format!("{db} dB"))));
         }
         if let Some(db) = audio_settings.as_ref().and_then(|p| p.equalizer_treble_db) {
-            data.push(("treble eq:".to_string(), Some(format!("{db} dB"))));
+            data.push(("treble eq".to_string(), Some(format!("{db} dB"))));
         }
         if let Some(db) = audio_settings
             .as_ref()
             .and_then(|p| p.equalizer_center_trim_db)
         {
-            data.push(("center trim:".to_string(), Some(format!("{db} dB"))));
+            data.push(("center trim".to_string(), Some(format!("{db} dB"))));
+        }
+        if let Some(upmixer) = audio_settings.as_ref().and_then(|p| p.surround_upmixer) {
+            data.push(("surround upmix".to_string(), Some(upmixer.to_string())));
+        }
+        if let Some(volume_leveler) = audio_settings.as_ref().and_then(|p| p.volume_leveler) {
+            data.push((
+                "volume leveler".to_string(),
+                Some(volume_leveler.to_string()),
+            ));
+        }
+        if let Some(virtualizer) = audio_settings.as_ref().and_then(|p| p.virtualizer) {
+            data.push(("virtualizer".to_string(), Some(virtualizer.to_string())));
         }
 
         let data_key_max_len = data

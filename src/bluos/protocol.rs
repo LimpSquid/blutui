@@ -290,6 +290,12 @@ pub struct DeviceAudioSettings {
     pub equalizer_bass_db: Option<f64>,
     /// NB: Only available on specific devices
     pub equalizer_center_trim_db: Option<f64>,
+    /// NB: Only available on specific devices
+    pub surround_upmixer: Option<SettingState>,
+    /// NB: Only available on specific devices
+    pub volume_leveler: Option<SettingState>,
+    /// NB: Only available on specific devices
+    pub virtualizer: Option<SettingState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -386,4 +392,26 @@ pub struct DeviceSetting {
     pub id: String,
     #[serde(rename = "@value")]
     pub value: Option<String>,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Deserialize,
+    Serialize,
+    Display,
+    EnumString,
+    EnumIter,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase", ascii_case_insensitive)]
+pub enum SettingState {
+    On,
+    Off,
 }

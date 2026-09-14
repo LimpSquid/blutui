@@ -7,7 +7,7 @@ use strum::IntoEnumIterator;
 
 use super::super::client::ZoneMode;
 use super::common::*;
-use crate::bluos::{AudioPreset, LedBrightness, MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
+use crate::bluos::{AudioPreset, LedBrightness, MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL, SettingState};
 use crate::types::DeviceId;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -78,6 +78,10 @@ pub struct MultiplayerGroupProfile {
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
     pub center_trim: Option<f64>,
+    /// Surround upmixer, if `None` use the current surround upmixer value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surround_upmixer: Option<SettingState>,
     /// Led brightness, if `None` use the current brightness
     #[serde(skip_serializing_if = "Option::is_none")]
     pub led_brightness: Option<LedBrightness>,

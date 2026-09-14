@@ -8,7 +8,7 @@ pub use profile::ProfileController;
 pub use protocol::{
     AudioPreset, DeviceAudioSettings, DeviceDiagnostics, DeviceGroupStatus, DeviceInputSelection,
     DeviceInputSelectionItem, DevicePlayerSettings, DeviceState, DeviceStatus, DeviceVolume,
-    LedBrightness,
+    LedBrightness, SettingState,
 };
 
 pub const MAX_VOLUME_LEVEL: u8 = 100;
