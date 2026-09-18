@@ -14,8 +14,9 @@ use ratatui::widgets::{
 };
 use strum::IntoEnumIterator;
 
-use super::{Ui, components::*, theme::*, utils::*};
-use crate::bluos::MAX_VOLUME_LEVEL;
+#[allow(unused)]
+use super::{Ui, components::*, theme::*, utils::*, widgets};
+use crate::bluos::{DevicePlaybackState, MAX_VOLUME_LEVEL};
 use crate::terminal::app::{AppState, BusyFlags, DeviceState};
 
 struct RenderContext<'a, 'b> {
@@ -108,6 +109,16 @@ pub fn before_render(state: &AppState, ui: &mut Ui) {
             .next();
     }
 
+    #[cfg(feature = "ui-enable-image")]
+    if let Some(image) = ui
+        .selected_device
+        .and_then(|device_id| state.get_device_image(&device_id))
+    {
+        ui.music_image.set_image(image);
+    } else {
+        ui.music_image.clear_image();
+    }
+
     ui.render_start = Instant::now();
 }
 
@@ -116,7 +127,7 @@ pub fn after_render(_: &AppState, ui: &mut Ui) {
 
     tracing::trace!(?render_time, "render end");
 
-    if render_time.as_millis() >= 10 {
+    if render_time.as_millis() >= 100 {
         tracing::warn!(?render_time, "slow render");
     }
 }
@@ -210,7 +221,20 @@ fn render_keybindings(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         WindowFocus::Tabs if ctx.ui.selected_tab == Tab::Audio => vec![
             ("SPACEBAR", "Change Focus"),
             ("🡳/🡱/HOME/END", "Selection"),
-            ("j/l", "Volume Up/Down"),
+            ("b/n", "Back/Skip"),
+            ("(CTRL) + j/l", "(Device) Volume Up/Down"),
+            (
+                "p",
+                if ctx
+                    .ui
+                    .selected_device
+                    .is_some_and(|device_id| ctx.state.is_device_playing(&device_id))
+                {
+                    "Pause"
+                } else {
+                    "Play"
+                },
+            ),
             ("TAB", "Change Tab"),
             ("q", "Quit"),
         ],
@@ -331,13 +355,13 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 
     if let Some(DeviceState {
         device,
-        status,
         volume,
         group_status,
         diagnostics,
         input_selection,
         audio_settings,
         player_settings,
+        ..
     }) = ctx
         .ui
         .selected_device
@@ -378,31 +402,6 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             volume
                 .as_ref()
                 .map(|v| format!("{} ({} dB)", v.volume, v.db)),
-        ));
-        data.push((
-            "service".to_string(),
-            status.as_ref().map(|s| match s.service.as_ref() {
-                Some(service) => format!("{} ({})", service, s.state),
-                None => "N/A".to_string(),
-            }),
-        ));
-        data.push((
-            "now playing".to_string(),
-            status
-                .as_ref()
-                .map(|s| match (s.title1.as_ref(), s.title2.as_ref()) {
-                    (Some(t1), Some(t2)) => format!("{t1} • {t2}"),
-                    (Some(t1), None) => t1.to_string(),
-                    (None, Some(a)) => a.to_string(),
-                    (None, None) => "N/A".to_string(),
-                }),
-        ));
-        data.push((
-            "album".to_string(),
-            status.as_ref().map(|s| match s.album.as_ref() {
-                Some(a) => a.to_owned(),
-                None => "N/A".to_string(),
-            }),
         ));
         if let Some(input_selection) = input_selection
             && !input_selection.item.is_empty()
@@ -591,7 +590,7 @@ fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     let layout = Layout::new(
         Direction::Horizontal,
-        [Constraint::Percentage(35), Constraint::Fill(1)],
+        [Constraint::Percentage(40), Constraint::Fill(1)],
     )
     .spacing(Spacing::Overlap(1))
     .split(area);
@@ -693,16 +692,15 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         ctx.frame
             .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
     } else {
-        let [volume_area, other_area] = area.layout(
+        let [volume_area, music_area] = area.layout(
             &Layout::new(
                 Direction::Horizontal,
-                [Constraint::Percentage(50), Constraint::Fill(1)],
+                [Constraint::Percentage(40), Constraint::Fill(1)],
             )
             .spacing(Spacing::Overlap(1)),
         );
-        let volume_area = render_groupbox(ctx, Some("volume"), volume_area, false);
-        let _other_area = render_groupbox(ctx, Some("TODO"), other_area, false);
 
+        let volume_area = render_groupbox(ctx, Some("volume"), volume_area, false);
         let volume_chart = BarChart::horizontal(
             ctx.state
                 .sorted_device_state_iter()
@@ -711,7 +709,7 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 
                     match device.volume.as_ref() {
                         Some(volume) => Bar::with_label(
-                            format!("{:.1} db", volume.db)
+                            format!("{:>3} ({:>6.1} dB)", volume.volume, volume.db)
                                 .set_style(if selected {
                                     Style::new().bg(ctx.ui.stylesheet.accent_color_dark).bold()
                                 } else {
@@ -720,17 +718,116 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                                 .fg(ctx.ui.stylesheet.text_color),
                             volume.volume as u64,
                         )
+                        .text_value("")
                         .fg(uuid_to_color(*device_id)),
                         None => Bar::new(0),
                     }
                 })
                 .collect::<Vec<_>>(),
         )
-        .bar_width(3)
+        .bar_width(1)
         .bar_gap(0)
         .max(MAX_VOLUME_LEVEL.into());
-
         ctx.frame.render_widget(volume_chart, volume_area);
+
+        let music_area = render_groupbox(ctx, Some("music"), music_area, false);
+        if let Some(device) = ctx
+            .ui
+            .selected_device
+            .and_then(|device_id| ctx.state.find_device(&device_id))
+        {
+            let mut lines: Vec<Line> = Vec::new();
+
+            if let Some(status) = device.status.as_ref() {
+                lines.push(Line::from(vec![
+                    format!("{}", status.state)
+                        .fg(match status.state {
+                            DevicePlaybackState::Play | DevicePlaybackState::Stream => {
+                                ctx.ui.stylesheet.success_color
+                            }
+                            DevicePlaybackState::Pause | DevicePlaybackState::Stop => {
+                                ctx.ui.stylesheet.highlight_color
+                            }
+                            _ => ctx.ui.stylesheet.text_color_sub,
+                        })
+                        .bold(),
+                ]));
+
+                if let Some(title) = status.title1.as_ref() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from("track".fg(ctx.ui.stylesheet.text_color_sub)));
+                    lines.push(Line::from(
+                        Span::raw(title).fg(ctx.ui.stylesheet.text_color),
+                    ));
+                }
+
+                if let Some(artist) = status.artist.as_ref() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from("artist".fg(ctx.ui.stylesheet.text_color_sub)));
+                    lines.push(Line::from(
+                        Span::raw(artist).fg(ctx.ui.stylesheet.text_color),
+                    ));
+                }
+
+                if let Some(album) = status.album.as_ref() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from("album".fg(ctx.ui.stylesheet.text_color_sub)));
+                    lines.push(Line::from(
+                        Span::raw(album).fg(ctx.ui.stylesheet.text_color),
+                    ));
+                }
+
+                if let Some(service) = status.service.as_ref() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        format!("via {service}").fg(ctx.ui.stylesheet.text_color_sub),
+                    ]));
+                }
+
+                #[cfg(feature = "ui-enable-image")]
+                {
+                    let [music_image_area, music_info_area] = music_area.layout(
+                        &Layout::new(
+                            Direction::Horizontal,
+                            [Constraint::Percentage(40), Constraint::Fill(1)],
+                        )
+                        .spacing(2),
+                    );
+                    ctx.frame.render_stateful_widget(
+                        widgets::Image::new(),
+                        music_image_area,
+                        &mut ctx.ui.music_image,
+                    );
+                    ctx.frame.render_widget(
+                        Paragraph::new(lines).wrap(Wrap { trim: false }),
+                        music_info_area,
+                    );
+                }
+                #[cfg(not(feature = "ui-enable-image"))]
+                {
+                    ctx.frame.render_widget(
+                        Paragraph::new(lines).wrap(Wrap { trim: false }),
+                        music_area,
+                    );
+                }
+            } else {
+                let text = Line::from("Loading... ⏳".fg(ctx.ui.stylesheet.text_color_sub));
+                let area = music_area.centered(
+                    Constraint::Length(text.width() as u16),
+                    Constraint::Length(1),
+                );
+                ctx.frame
+                    .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+            }
+        } else {
+            let text = Line::from("Select a device.".fg(ctx.ui.stylesheet.text_color_sub));
+            let area = music_area.centered(
+                Constraint::Length(text.width() as u16),
+                Constraint::Length(1),
+            );
+            ctx.frame
+                .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+        }
     }
 }
 

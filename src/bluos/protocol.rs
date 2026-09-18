@@ -42,7 +42,7 @@ where
 )]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
-pub enum DeviceState {
+pub enum DevicePlaybackState {
     Play,
     Pause,
     Stop,
@@ -53,7 +53,7 @@ pub enum DeviceState {
     Unknown,
 }
 
-impl DeviceState {
+impl DevicePlaybackState {
     pub fn is_playing(&self) -> bool {
         matches!(self, Self::Play | Self::Stream | Self::Connecting)
     }
@@ -69,8 +69,9 @@ pub struct DeviceStatus {
     pub title2: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
-    pub state: DeviceState,
+    pub state: DevicePlaybackState,
     pub service: Option<String>,
+    pub image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

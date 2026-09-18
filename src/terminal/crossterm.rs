@@ -71,14 +71,15 @@ pub async fn run() -> anyhow::Result<()> {
     app_init_dir_structure()?;
     let _log_guard = app_init_logging(event_bus.clone());
     let mut app = App::new(event_bus).await?;
+    let backend = CrosstermBackend::new(std::io::stdout());
+    let mut terminal = Terminal::new(backend)?;
+    let mut input_event_stream = CrosstermEventStream::new();
 
     // Setup terminal
     enable_raw_mode()?;
     execute!(std::io::stdout(), EnterAlternateScreen,)?;
 
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend)?;
-    let mut input_event_stream = CrosstermEventStream::new();
+    app.ui.query_for_graphics_capabilities();
 
     let result = async {
         while !app.ui.should_quit {
@@ -111,6 +112,7 @@ pub async fn run() -> anyhow::Result<()> {
                         app.handle_app_event(event).await?;
                     }
                 },
+                _ = app.ui.redraw.wait() => { /* do nothing */ }
             }
 
             for action in std::mem::take(&mut app.ui.pending_actions) {

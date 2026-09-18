@@ -10,12 +10,12 @@ use crate::bluos::{
 };
 use crate::discover::Device;
 use crate::profman::StoredProfile;
-use crate::types::DeviceId;
+use crate::types::{DeviceId, NoDebug};
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Event {
-    DiscoveryAnnouncement(SocketAddr, Vec<u8>),
+    DiscoveryAnnouncement(SocketAddr, NoDebug<Vec<u8>>),
     DeviceAnnouncement(Device),
     DeviceGone(Device),
     DeviceStatusUpdated(DeviceId, DeviceStatus),
@@ -31,6 +31,8 @@ pub enum Event {
     ProfileTransitionStarted,
     ProfileTransitionCompleted(Arc<anyhow::Result<()>>),
     ProfilesLoaded(Vec<StoredProfile>),
+    #[cfg(feature = "ui-enable-image")]
+    ImageFetched(NoDebug<crate::image_cache::Image>),
     #[cfg(feature = "ui-enable-logs")]
     Logs(Vec<String>),
 }

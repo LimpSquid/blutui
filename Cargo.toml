@@ -16,7 +16,10 @@ path = "src/bin/settings_crawler.rs"
 opt-level = "z"
 
 [features]
+default = [ "fs-enable-logs", "ui-enable-image" ]
 ui-enable-logs = [ "ansi-to-tui" ]
+# required packages: libchafa-dev pkg-config libsysprof-capture-4-dev
+ui-enable-image = [ "image", "ratatui-image" ]
 fs-enable-logs = []
 
 [dependencies]
@@ -27,11 +30,13 @@ chrono = { version = "0.4" }
 clap = { version = "4.4", features = [ "derive" ] }
 crossterm = { version = "*", features = [ "event-stream" ] }
 futures = { version = "0.3" }
+image = { version = "0.25", optional = true }
 itertools = { version = "0.14" }
 netdev = { version = "0.42" }
 notify = { version = "8" }
 quick-xml = { version = "0.39", features = [ "serialize", "overlapped-lists" ] }
 ratatui = { version = "0.30", features = [ "unstable-widget-ref" ] }
+ratatui-image = { version = "11", default-features = false, features = [ "crossterm", "chafa-static" ], optional = true }
 reqwest = { version = "0.13", features = [ "query", "json", "stream", "form" ] }
 scraper = { version = "0.27", features = [ "serde" ] }
 serde = { version = "1", features = [ "serde_derive" ] }

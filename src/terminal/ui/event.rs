@@ -117,13 +117,48 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                 }
             }
             (Tabs, KeyCode::Char('l' | 'L')) if ui.selected_tab == Audio => {
-                if let Some(device_id) = ui.selected_device {
-                    ui.action(UserAction::DeviceVolumeUp(device_id));
+                if let Some(device) = ui
+                    .selected_device
+                    .and_then(|id| state.device_state.get(&id))
+                {
+                    if !modifiers.ctrl
+                        && let Some(group_id) =
+                            device.group_status.as_ref().and_then(|s| s.group_id())
+                    {
+                        ui.action(UserAction::GroupVolumeUp(group_id));
+                    } else {
+                        ui.action(UserAction::DeviceVolumeUp(device.device.id));
+                    }
                 }
             }
             (Tabs, KeyCode::Char('j' | 'J')) if ui.selected_tab == Audio => {
+                if let Some(device) = ui
+                    .selected_device
+                    .and_then(|id| state.device_state.get(&id))
+                {
+                    if !modifiers.ctrl
+                        && let Some(group_id) =
+                            device.group_status.as_ref().and_then(|s| s.group_id())
+                    {
+                        ui.action(UserAction::GroupVolumeDown(group_id));
+                    } else {
+                        ui.action(UserAction::DeviceVolumeDown(device.device.id));
+                    }
+                }
+            }
+            (Tabs, KeyCode::Char('p' | 'P')) if ui.selected_tab == Audio => {
                 if let Some(device_id) = ui.selected_device {
-                    ui.action(UserAction::DeviceVolumeDown(device_id));
+                    ui.action(UserAction::TogglePausePlay(device_id));
+                }
+            }
+            (Tabs, KeyCode::Char('n' | 'N')) if ui.selected_tab == Audio => {
+                if let Some(device_id) = ui.selected_device {
+                    ui.action(UserAction::Skip(device_id));
+                }
+            }
+            (Tabs, KeyCode::Char('b' | 'B')) if ui.selected_tab == Audio => {
+                if let Some(device_id) = ui.selected_device {
+                    ui.action(UserAction::Back(device_id));
                 }
             }
             (Tabs, KeyCode::Down) if ui.selected_tab == Audio => {

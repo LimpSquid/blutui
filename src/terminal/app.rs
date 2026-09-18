@@ -14,6 +14,8 @@ use crate::bluos::{
 use crate::discover::{Device, DeviceDiscovery};
 use crate::editor::open_external_editor;
 use crate::event::{Event, EventBus};
+#[cfg(feature = "ui-enable-image")]
+use crate::image_cache::{Image, ImageCache};
 use crate::profman::{ProfileManager, StoredProfile, create_profile};
 use crate::types::{DeviceId, GroupId, ProfileId};
 
@@ -71,19 +73,23 @@ pub struct AppState {
     pub device_state: HashMap<DeviceId, DeviceState>,
     pub profiles: HashMap<ProfileId, StoredProfile>,
     pub busy_flags: BusyFlags,
+    #[cfg(feature = "ui-enable-image")]
+    pub image_cache: ImageCache,
     #[cfg(feature = "ui-enable-logs")]
     pub logs: std::collections::VecDeque<String>,
 }
 
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
+impl AppState {
+    fn new(#[allow(unused)] event_bus: EventBus) -> anyhow::Result<Self> {
+        Ok(Self {
             device_state: Default::default(),
             profiles: Default::default(),
             busy_flags: BusyFlags::empty(),
+            #[cfg(feature = "ui-enable-image")]
+            image_cache: ImageCache::new(event_bus)?,
             #[cfg(feature = "ui-enable-logs")]
             logs: Default::default(),
-        }
+        })
     }
 }
 
@@ -140,6 +146,23 @@ impl AppState {
             .and_then(|s| s.status.as_ref())
             .is_some_and(|s| s.state.is_playing())
     }
+
+    #[cfg(feature = "ui-enable-image")]
+    pub fn get_device_image(&self, device_id: &DeviceId) -> Option<Image> {
+        let device = self.find_device(&device_id)?;
+        let image_url = device.status.as_ref()?.image.as_deref()?;
+        let request_url = if image_url.starts_with("/") {
+            &format!(
+                "http://{}:{}{image_url}",
+                device.device.ip_addr,
+                device.device.api_port()
+            )
+        } else {
+            image_url
+        };
+
+        self.image_cache.get(request_url).image()
+    }
 }
 
 #[allow(unused)]
@@ -158,14 +181,16 @@ impl App {
         let device_controller = DeviceController::start(event_bus.clone()).await?;
         let profile_controller = ProfileController::start(event_bus.clone()).await?;
         let profile_manager = ProfileManager::start(event_bus.clone()).await?;
+        let state = AppState::new(event_bus.clone())?;
+        let ui = Ui::default();
 
         Ok(Self {
             device_discovery,
             device_controller,
             profile_controller,
             profile_manager,
-            state: Default::default(),
-            ui: Default::default(),
+            state,
+            ui,
         })
     }
 
@@ -250,7 +275,9 @@ impl App {
                     self.ui.show_notification(format!("{error:?}"));
                 }
             }
-            Event::DiscoveryAnnouncement(..) => {}
+            Event::DiscoveryAnnouncement(..) => { /* do nothing */ }
+            #[cfg(feature = "ui-enable-image")]
+            Event::ImageFetched(_) => { /* do nothing */ }
             #[cfg(feature = "ui-enable-logs")]
             Event::Logs(logs) => {
                 const N: usize = 64;

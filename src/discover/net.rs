@@ -125,7 +125,7 @@ async fn processor(
                         Ok(packet) => {
                             event_bus.publish_lossy(Event::DiscoveryAnnouncement(
                                 from,
-                                buf[..size].to_vec(),
+                                buf[..size].to_vec().into(),
                             ));
 
                             match packet.message {
