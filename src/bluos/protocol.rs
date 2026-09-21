@@ -55,7 +55,7 @@ pub enum DevicePlaybackState {
 
 impl DevicePlaybackState {
     pub fn is_playing(&self) -> bool {
-        matches!(self, Self::Play | Self::Stream | Self::Connecting)
+        matches!(self, Self::Play | Self::Stream)
     }
 }
 
@@ -72,6 +72,8 @@ pub struct DeviceStatus {
     pub state: DevicePlaybackState,
     pub service: Option<String>,
     pub image: Option<String>,
+    pub totlen: Option<u64>,
+    pub secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

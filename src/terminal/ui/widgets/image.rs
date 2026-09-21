@@ -1,13 +1,15 @@
+use std::io::Cursor;
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::StatefulWidget;
+use ratatui::widgets::{StatefulWidget, Widget};
 use ratatui_image::picker::Picker;
 use ratatui_image::protocol::StatefulProtocol;
 use ratatui_image::{Resize, ResizeEncodeRender};
 use tokio::sync::oneshot;
 
 use super::super::Redraw;
-use crate::image_cache;
+use crate::image_cache::{self, ImageId};
 
 struct ResizeJob {
     generation: u64,
@@ -15,11 +17,12 @@ struct ResizeJob {
 }
 
 pub struct ImageState {
-    image_id: Option<image_cache::ImageId>,
+    image_id: Option<ImageId>,
     protocol: Option<StatefulProtocol>,
     picker: Picker,
     resize: Resize,
     resize_job: Option<ResizeJob>,
+    resize_on_next_render: bool,
     generation: u64,
     redraw: Redraw,
 }
@@ -32,6 +35,7 @@ impl ImageState {
             picker: Picker::halfblocks(),
             resize: Resize::Scale(None),
             resize_job: None,
+            resize_on_next_render: false,
             generation: 0,
             redraw,
         }
@@ -39,6 +43,7 @@ impl ImageState {
 
     pub fn set_picker(&mut self, picker: Picker) {
         self.picker = picker;
+        self.resize_on_next_render = true;
     }
 
     pub fn set_image(&mut self, image: image_cache::Image) {
@@ -86,7 +91,11 @@ impl ImageState {
 
     fn resize_if_needed(&mut self, area: Rect) -> Option<&mut StatefulProtocol> {
         let mut protocol = self.protocol.take()?;
-        let Some(size) = protocol.needs_resize(&self.resize, area.into()) else {
+        let force_resize = std::mem::take(&mut self.resize_on_next_render);
+        let Some(size) = protocol
+            .needs_resize(&self.resize, area.into())
+            .or_else(|| force_resize.then(|| protocol.size_for(self.resize.clone(), area.into())))
+        else {
             self.protocol = Some(protocol);
             return self.protocol.as_mut();
         };

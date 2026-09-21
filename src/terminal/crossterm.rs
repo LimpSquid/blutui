@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use clap::{Parser, Subcommand};
 use crossterm::event::{
     Event as CrosstermEvent, EventStream as CrosstermEventStream, KeyCode, KeyEvent, KeyModifiers,
@@ -9,6 +11,7 @@ use crossterm::terminal::{
 use futures::{FutureExt, StreamExt};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use tokio::time::sleep;
 
 use super::app::*;
 use super::ui::{self, *};
@@ -87,9 +90,9 @@ pub async fn run() -> anyhow::Result<()> {
             terminal.draw(|frame| render(frame, &app.state, &mut app.ui))?;
             after_render(&app.state, &mut app.ui);
 
-            // Wait for input or app event
             tokio::select! {
                 biased;
+                // Handle input event
                 event = input_event_stream.next().fuse() => {
                     if let Some(e) = event.transpose()? {
                         match e {
@@ -103,16 +106,24 @@ pub async fn run() -> anyhow::Result<()> {
                                 tracing::debug!(event = ?e, "handling focus gained event");
                                 ui::user_event(UserEvent::FocusGained, &app.state, &mut app.ui);
                             }
+                            CrosstermEvent::Resize(cols, rows) => {
+                                tracing::debug!(event = ?e, "handling resize event");
+                                ui::user_event(UserEvent::Resize(cols, rows), &app.state, &mut app.ui);
+                            }
                             _ => {}
                         }
                     }
                 }
+                // Handle app events
                 events = event_stream.recv_all() => {
                     for event in events? {
                         app.handle_app_event(event).await?;
                     }
                 },
+                // Handle redraw requests
                 _ = app.ui.redraw.wait() => { /* do nothing */ }
+                // Atleast redraw the UI every second if it idles too long
+                _ = sleep(Duration::from_secs(1)) => { /* do nothing */ }
             }
 
             for action in std::mem::take(&mut app.ui.pending_actions) {

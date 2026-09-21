@@ -28,6 +28,7 @@ pub struct KeyModifiers {
 #[derive(Debug, Clone)]
 pub enum UserEvent {
     Key(KeyCode, KeyModifiers),
+    Resize(u16, u16),
     FocusGained,
 }
 
@@ -36,6 +37,9 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
     use WindowFocus::*;
 
     match event {
+        UserEvent::Resize(_cols, _rows) => {
+            ui.query_for_graphics_capabilities();
+        }
         UserEvent::FocusGained => ui.action(UserAction::RefreshDevices),
         UserEvent::Key(code, modifiers) => match (ui.window_focus, code) {
             // Re-route input to dialog and handle event
@@ -116,7 +120,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     ui.action(UserAction::EditProfile(profile_id));
                 }
             }
-            (Tabs, KeyCode::Char('l' | 'L')) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Char('l' | 'L')) if ui.selected_tab == Music => {
                 if let Some(device) = ui
                     .selected_device
                     .and_then(|id| state.device_state.get(&id))
@@ -131,7 +135,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     }
                 }
             }
-            (Tabs, KeyCode::Char('j' | 'J')) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Char('j' | 'J')) if ui.selected_tab == Music => {
                 if let Some(device) = ui
                     .selected_device
                     .and_then(|id| state.device_state.get(&id))
@@ -146,39 +150,39 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     }
                 }
             }
-            (Tabs, KeyCode::Char('p' | 'P')) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Char('p' | 'P')) if ui.selected_tab == Music => {
                 if let Some(device_id) = ui.selected_device {
                     ui.action(UserAction::TogglePausePlay(device_id));
                 }
             }
-            (Tabs, KeyCode::Char('n' | 'N')) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Char('n' | 'N')) if ui.selected_tab == Music => {
                 if let Some(device_id) = ui.selected_device {
                     ui.action(UserAction::Skip(device_id));
                 }
             }
-            (Tabs, KeyCode::Char('b' | 'B')) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Char('b' | 'B')) if ui.selected_tab == Music => {
                 if let Some(device_id) = ui.selected_device {
                     ui.action(UserAction::Back(device_id));
                 }
             }
-            (Tabs, KeyCode::Down) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Down) if ui.selected_tab == Music => {
                 ui.selected_device = select_next(
                     state.sorted_device_state_iter(),
                     |(id, _)| *id,
                     ui.selected_device,
                 );
             }
-            (Tabs, KeyCode::Up) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Up) if ui.selected_tab == Music => {
                 ui.selected_device = select_previous(
                     state.sorted_device_state_iter(),
                     |(id, _)| *id,
                     ui.selected_device,
                 );
             }
-            (Tabs, KeyCode::Home) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::Home) if ui.selected_tab == Music => {
                 ui.selected_device = select_first(state.sorted_device_state_iter(), |(id, _)| *id);
             }
-            (Tabs, KeyCode::End) if ui.selected_tab == Audio => {
+            (Tabs, KeyCode::End) if ui.selected_tab == Music => {
                 ui.selected_device = select_last(state.sorted_device_state_iter(), |(id, _)| *id);
             }
 

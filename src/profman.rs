@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use notify::{
@@ -147,9 +148,9 @@ async fn profile_dir_watcher(
         }
 
         if updated {
-            event_bus.publish_lossy(Event::ProfilesLoaded(
+            event_bus.publish_lossy(Event::ProfilesLoaded(Arc::new(
                 stored_profiles.values().cloned().collect(),
-            ));
+            )));
         }
 
         Ok(())

@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use strum_macros::Display;
 use tokio::sync::broadcast;
 
 use crate::bluos::{
@@ -10,12 +11,12 @@ use crate::bluos::{
 };
 use crate::discover::Device;
 use crate::profman::StoredProfile;
-use crate::types::{DeviceId, NoDebug};
+use crate::types::DeviceId;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Display)]
 #[non_exhaustive]
 pub enum Event {
-    DiscoveryAnnouncement(SocketAddr, NoDebug<Vec<u8>>),
+    DiscoveryAnnouncement(SocketAddr, Vec<u8>),
     DeviceAnnouncement(Device),
     DeviceGone(Device),
     DeviceStatusUpdated(DeviceId, DeviceStatus),
@@ -30,11 +31,11 @@ pub enum Event {
     ),
     ProfileTransitionStarted,
     ProfileTransitionCompleted(Arc<anyhow::Result<()>>),
-    ProfilesLoaded(Vec<StoredProfile>),
+    ProfilesLoaded(Arc<Vec<StoredProfile>>),
     #[cfg(feature = "ui-enable-image")]
-    ImageFetched(NoDebug<crate::image_cache::Image>),
+    ImageFetched(crate::image_cache::Image),
     #[cfg(feature = "ui-enable-logs")]
-    Logs(Vec<String>),
+    Logs(Arc<Vec<String>>),
 }
 
 pub struct EventStream(broadcast::Receiver<Event>);
@@ -83,6 +84,7 @@ impl EventBus {
     }
 
     pub fn publish(&self, event: Event) -> anyhow::Result<()> {
+        // TODO: Prefilter events so subscribers receive only the events they are interested in
         self.pipe.send(event).map_err(|e| anyhow::anyhow!("{e}"))?;
 
         Ok(())

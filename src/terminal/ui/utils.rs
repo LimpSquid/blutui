@@ -74,3 +74,10 @@ pub fn uuid_to_color<UUID: Into<Uuid>>(uuid: UUID) -> Color {
 
     Color::Rgb(r, g, b)
 }
+
+pub fn format_minutes_seconds(total_seconds: u64) -> String {
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+
+    format!("{}:{:02}", minutes, seconds)
+}

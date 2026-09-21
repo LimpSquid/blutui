@@ -38,6 +38,10 @@ struct CacheEntry {
 pub struct ImageId(Uuid);
 
 impl ImageId {
+    pub fn nil() -> Self {
+        Self(Uuid::nil())
+    }
+
     fn new(url: &str) -> Self {
         Self(Uuid::new_v5(&IMAGE_ID_NS, url.as_bytes()))
     }
@@ -77,7 +81,7 @@ pub struct ImageCache {
     cache: Arc<RwLock<HashMap<ImageId, Option<CacheEntry>>>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Image {
     pub id: ImageId,
     pub image: Arc<DynamicImage>,
@@ -118,7 +122,6 @@ impl ImageCache {
     pub fn get(&self, url: &str) -> GetResult {
         let image_id = ImageId::new(url);
 
-        // Fetch image
         let Some(cache_entry) = self
             .cache
             .read()
@@ -126,6 +129,7 @@ impl ImageCache {
             .get(&image_id)
             .map(|cache_entry| cache_entry.to_owned())
         else {
+            // Fetch image
             let should_fetch = {
                 let mut cache = self.cache.write().expect("poisoned lock");
                 if cache.contains_key(&image_id) {

@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use itertools::Itertools;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -46,6 +47,7 @@ bitflags::bitflags! {
 pub struct DeviceState {
     pub device: Device,
     pub status: Option<DeviceStatus>,
+    pub status_updated_at: Option<Instant>,
     pub volume: Option<DeviceVolume>,
     pub group_status: Option<DeviceGroupStatus>,
     pub diagnostics: Option<DeviceDiagnostics>,
@@ -59,6 +61,7 @@ impl From<Device> for DeviceState {
         Self {
             device,
             status: None,
+            status_updated_at: None,
             volume: None,
             group_status: None,
             diagnostics: None,
@@ -194,7 +197,7 @@ impl App {
         })
     }
 
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self), fields(%event))]
     pub async fn handle_app_event(&mut self, event: Event) -> anyhow::Result<()> {
         match &event {
             #[cfg(feature = "ui-enable-logs")]
@@ -220,6 +223,7 @@ impl App {
                 if let Some(state) = self.state.device_state.get_mut(&id) {
                     debug_diff!(~ state.status, value, "device status updated");
                     state.status = Some(value);
+                    state.status_updated_at = Some(Instant::now());
                 }
             }
             Event::DeviceVolumeUpdated(id, value) => {
@@ -253,8 +257,8 @@ impl App {
             }
             Event::ProfilesLoaded(profiles) => {
                 self.state.profiles = profiles
-                    .into_iter()
-                    .map(|profile| (profile.id(), profile))
+                    .iter()
+                    .map(|profile| (profile.id(), profile.to_owned()))
                     .collect();
             }
             Event::ProfileTransitionStarted => {
@@ -281,9 +285,9 @@ impl App {
             #[cfg(feature = "ui-enable-logs")]
             Event::Logs(logs) => {
                 const N: usize = 64;
-                logs.into_iter()
+                logs.iter()
                     .take(N)
-                    .for_each(|log| self.state.logs.push_front(log));
+                    .for_each(|log| self.state.logs.push_front(log.to_owned()));
                 self.state.logs.truncate(N);
             }
         }
@@ -411,7 +415,7 @@ pub fn logs_dir() -> PathBuf {
 #[allow(unused)]
 pub struct LogGuard(Option<WorkerGuard>);
 
-pub fn app_init_logging(event_bus: EventBus) -> LogGuard {
+pub fn app_init_logging(#[allow(unused)] event_bus: EventBus) -> LogGuard {
     #[cfg(feature = "fs-enable-logs")]
     let (file_layer_guard, file_layer) = {
         let file_appender = tracing_appender::rolling::daily(logs_dir(), "rolling.log");
@@ -467,7 +471,7 @@ pub fn app_init_logging(event_bus: EventBus) -> LogGuard {
                 use std::time::Duration;
 
                 if !logs.is_empty() && sent_at.elapsed().as_millis() >= 100 {
-                    event_bus.publish_lossy(Event::Logs(take(&mut logs)));
+                    event_bus.publish_lossy(Event::Logs(std::sync::Arc::new(take(&mut logs))));
                     sent_at = Instant::now();
                 }
 
@@ -490,6 +494,7 @@ pub fn app_init_logging(event_bus: EventBus) -> LogGuard {
         )
     };
 
+    #[allow(unused)]
     let registry = tracing_subscriber::registry().with(
         tracing_subscriber::EnvFilter::builder()
             .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
@@ -513,9 +518,6 @@ pub fn app_init_logging(event_bus: EventBus) -> LogGuard {
     }
     #[cfg(all(not(feature = "fs-enable-logs"), not(feature = "ui-enable-logs")))]
     {
-        // NB: silence unused warning
-        drop(registry);
-        drop(event_bus);
         LogGuard(None)
     }
 }

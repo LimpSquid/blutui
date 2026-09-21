@@ -9,8 +9,8 @@ use ratatui::symbols::merge::MergeStrategy;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::canvas::Canvas;
 use ratatui::widgets::{
-    Bar, BarChart, Block, BorderType, List, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState, Tabs, Wrap,
+    Bar, BarChart, Block, BorderType, Gauge, List, ListState, Paragraph, Scrollbar,
+    ScrollbarOrientation, ScrollbarState, Tabs, Wrap,
 };
 use strum::IntoEnumIterator;
 
@@ -73,7 +73,7 @@ impl From<usize> for WindowFocus {
 pub enum Tab {
     #[default]
     Profile,
-    Audio,
+    Music,
     #[cfg(feature = "ui-enable-logs")]
     Logs,
 }
@@ -218,7 +218,7 @@ fn render_keybindings(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             ("TAB", "Change Tab"),
             ("q", "Quit"),
         ],
-        WindowFocus::Tabs if ctx.ui.selected_tab == Tab::Audio => vec![
+        WindowFocus::Tabs if ctx.ui.selected_tab == Tab::Music => vec![
             ("SPACEBAR", "Change Focus"),
             ("🡳/🡱/HOME/END", "Selection"),
             ("b/n", "Back/Skip"),
@@ -581,7 +581,7 @@ fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 
     match ctx.ui.selected_tab {
         Tab::Profile => render_profile_tab(ctx, layout[2]),
-        Tab::Audio => render_audio_tab(ctx, layout[2]),
+        Tab::Music => render_music_tab(ctx, layout[2]),
         #[cfg(feature = "ui-enable-logs")]
         Tab::Logs => render_logs_tab(ctx, layout[2]),
     }
@@ -680,7 +680,7 @@ fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     }
 }
 
-fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
+fn render_music_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     render_groupbox(ctx, None, area, false);
 
     if ctx.state.device_state.is_empty() {
@@ -784,6 +784,42 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     ]));
                 }
 
+                let progress_bar = if let Some(status_updated_at) = device.status_updated_at
+                    && let Some(end) = status.totlen
+                    && let Some(secs) = status.secs
+                {
+                    let offset = if ctx.state.is_device_playing(&device.device.id) {
+                        status_updated_at.elapsed().as_secs()
+                    } else {
+                        0
+                    };
+                    let seek = (secs + offset).min(end);
+                    let label = Span::styled(
+                        format!(
+                            "{} / {}",
+                            format_minutes_seconds(seek),
+                            format_minutes_seconds(end)
+                        ),
+                        Style::new()
+                            .italic()
+                            .bold()
+                            .fg(ctx.ui.stylesheet.text_color),
+                    );
+                    Some(
+                        Gauge::default()
+                            .ratio(seek as f64 / end as f64)
+                            .gauge_style(
+                                Style::new()
+                                    .fg(ctx.ui.stylesheet.accent_color_dark)
+                                    .bg(ctx.ui.stylesheet.text_color_sub),
+                            )
+                            .label(label)
+                            .use_unicode(true),
+                    )
+                } else {
+                    None
+                };
+
                 #[cfg(feature = "ui-enable-image")]
                 {
                     let [music_image_area, music_info_area] = music_area.layout(
@@ -793,22 +829,53 @@ fn render_audio_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                         )
                         .spacing(2),
                     );
+
                     ctx.frame.render_stateful_widget(
                         widgets::Image::new(),
                         music_image_area,
                         &mut ctx.ui.music_image,
                     );
-                    ctx.frame.render_widget(
-                        Paragraph::new(lines).wrap(Wrap { trim: false }),
-                        music_info_area,
-                    );
+                    if let Some(progress_bar) = progress_bar {
+                        let [top, bottom] = music_info_area.layout(
+                            &Layout::new(
+                                Direction::Vertical,
+                                [Constraint::Length(1), Constraint::Fill(1)],
+                            )
+                            .spacing(1),
+                        );
+                        ctx.frame.render_widget(progress_bar, top);
+                        ctx.frame.render_widget(
+                            Paragraph::new(lines).wrap(Wrap { trim: false }),
+                            bottom,
+                        );
+                    } else {
+                        ctx.frame.render_widget(
+                            Paragraph::new(lines).wrap(Wrap { trim: false }),
+                            music_info_area,
+                        );
+                    }
                 }
                 #[cfg(not(feature = "ui-enable-image"))]
                 {
-                    ctx.frame.render_widget(
-                        Paragraph::new(lines).wrap(Wrap { trim: false }),
-                        music_area,
-                    );
+                    if let Some(progress_bar) = progress_bar {
+                        let [top, bottom] = music_area.layout(
+                            &Layout::new(
+                                Direction::Vertical,
+                                [Constraint::Length(1), Constraint::Fill(1)],
+                            )
+                            .spacing(1),
+                        );
+                        ctx.frame.render_widget(progress_bar, top);
+                        ctx.frame.render_widget(
+                            Paragraph::new(lines).wrap(Wrap { trim: false }),
+                            bottom,
+                        );
+                    } else {
+                        ctx.frame.render_widget(
+                            Paragraph::new(lines).wrap(Wrap { trim: false }),
+                            music_area,
+                        );
+                    }
                 }
             } else {
                 let text = Line::from("Loading... ⏳".fg(ctx.ui.stylesheet.text_color_sub));
