@@ -10,7 +10,7 @@ use crate::bluos::{
     DevicePlayerSettings, DeviceStatus, DeviceVolume,
 };
 use crate::discover::Device;
-use crate::profman::StoredProfile;
+use crate::profile::StoredProfile;
 use crate::types::DeviceId;
 
 #[derive(Debug, Clone, Display)]

@@ -3,8 +3,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Paragraph, Widget, WidgetRef, Wrap};
 
-use super::{DialogComponent, Keybindings, prelude::*};
-use crate::profman::StoredProfile;
+use super::prelude::*;
+use crate::profile::StoredProfile;
 
 #[derive(Debug)]
 pub struct DeleteProfileDialog {

@@ -1,6 +1,6 @@
 use strum::EnumCount;
 
-use super::{Ui, UserAction, components::*, render::*, utils::*};
+use super::{Ui, UserAction, components::dialog::*, render::*, utils::*};
 use crate::terminal::app::{AppState, BusyFlags};
 
 #[derive(Debug, Clone, Copy)]
@@ -43,14 +43,16 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
         UserEvent::FocusGained => ui.action(UserAction::RefreshDevices),
         UserEvent::Key(code, modifiers) => match (ui.window_focus, code) {
             // Re-route input to dialog and handle event
-            (_, _) if let Some(dialog) = ui.active_dialog.as_mut() => {
+            (_, _) if let Some(dialog) = ui.active_dialogs.front_mut() => {
                 match dialog.on_key_press(code, modifiers) {
                     Some(DialogEvent::Actions(actions)) => ui.actions(actions),
                     Some(DialogEvent::Submitted(actions)) => {
                         ui.actions(actions);
-                        ui.active_dialog = None;
+                        ui.active_dialogs.pop_front();
                     }
-                    Some(DialogEvent::Closed) => ui.active_dialog = None,
+                    Some(DialogEvent::Closed) => {
+                        ui.active_dialogs.pop_front();
+                    }
                     None => {}
                 }
             }

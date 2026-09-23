@@ -9,7 +9,7 @@ pub struct Popup<'a> {
     block: Block<'a>,
     horizontal_constraint: Constraint,
     vertical_constraint: Constraint,
-    title: Option<&'static str>,
+    title: Option<String>,
 }
 
 impl<'a> Popup<'a> {
@@ -22,12 +22,12 @@ impl<'a> Popup<'a> {
         }
     }
 
-    pub fn with_title(title: &'static str) -> Self {
+    pub fn with_title(title: &str) -> Self {
         Self {
             block: Block::bordered().border_type(BorderType::Thick),
             horizontal_constraint: Constraint::Percentage(60),
             vertical_constraint: Constraint::Percentage(60),
-            title: Some(title),
+            title: Some(title.to_owned()),
         }
     }
 

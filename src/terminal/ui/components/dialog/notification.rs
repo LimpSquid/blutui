@@ -3,7 +3,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Text;
 use ratatui::widgets::{Block, BorderType, Paragraph, Widget, WidgetRef, Wrap};
 
-use super::{DialogComponent, Keybindings, prelude::*};
+use super::prelude::*;
 
 #[derive(Debug)]
 pub struct NotificationDialog {

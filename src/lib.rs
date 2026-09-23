@@ -20,7 +20,7 @@ pub mod editor;
 pub mod event;
 #[cfg(feature = "ui-enable-image")]
 pub mod image_cache;
-pub mod profman;
+pub mod profile;
 pub mod serde;
 pub mod terminal;
 pub mod types;

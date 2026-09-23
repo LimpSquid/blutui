@@ -181,7 +181,7 @@ fn render_busy_indicator(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 
 #[tracing::instrument(skip_all)]
 fn render_dialog(ctx: &mut RenderContext<'_, '_>, area: Rect) {
-    if let Some(dialog) = ctx.ui.active_dialog.as_ref() {
+    if let Some(dialog) = ctx.ui.active_dialogs.front() {
         dialog.render_ref(area, ctx.frame.buffer_mut());
     }
 }

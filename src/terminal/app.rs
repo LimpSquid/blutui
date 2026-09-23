@@ -17,7 +17,7 @@ use crate::editor::open_external_editor;
 use crate::event::{Event, EventBus};
 #[cfg(feature = "ui-enable-image")]
 use crate::image_cache::{Image, ImageCache};
-use crate::profman::{ProfileManager, StoredProfile, create_profile};
+use crate::profile::{ProfileManager, StoredProfile, create_profile};
 use crate::types::{DeviceId, GroupId, ProfileId};
 
 macro_rules! debug_diff {

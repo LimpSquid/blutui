@@ -5,6 +5,7 @@ mod theme;
 mod utils;
 mod widgets;
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -12,8 +13,9 @@ pub use event::{KeyCode, KeyModifiers, UserEvent, user_event};
 pub use render::{after_render, before_render, render};
 use tokio::sync::Notify;
 
-use crate::profman::StoredProfile;
-use crate::terminal::ui::components::BoxedComponent;
+use self::components::BoxedComponent;
+use self::components::dialog::{DialogComponent, NotificationDialog};
+use crate::profile::StoredProfile;
 use crate::types::{DeviceId, GroupId, ProfileId};
 
 #[derive(Debug, Clone)]
@@ -57,7 +59,7 @@ pub struct Ui {
     pub(super) pending_actions: Vec<UserAction>,
     pub(super) redraw: Redraw,
 
-    active_dialog: Option<Box<dyn components::DialogComponent>>,
+    active_dialogs: VecDeque<Box<dyn DialogComponent>>,
     selected_device: Option<DeviceId>,
     selected_profile: Option<ProfileId>,
     selected_tab: render::Tab,
@@ -69,13 +71,6 @@ pub struct Ui {
 }
 
 impl Ui {
-    pub fn show_notification<M: Into<String>>(&mut self, message: M) {
-        self.open_dialog(components::NotificationDialog::new(
-            message,
-            self.stylesheet,
-        ));
-    }
-
     pub fn query_for_graphics_capabilities(&mut self) {
         #[cfg(feature = "ui-enable-image")]
         {
@@ -87,12 +82,12 @@ impl Ui {
         }
     }
 
-    fn open_dialog<D: components::DialogComponent + 'static>(&mut self, dialog: D) {
-        if self.active_dialog.is_some() {
-            return;
-        }
+    pub fn show_notification<M: Into<String>>(&mut self, message: M) {
+        self.open_dialog(NotificationDialog::new(message, self.stylesheet));
+    }
 
-        self.active_dialog = Some(dialog.boxed())
+    fn open_dialog<D: DialogComponent + 'static>(&mut self, dialog: D) {
+        self.active_dialogs.push_front(dialog.boxed())
     }
 
     fn quit(&mut self) {
@@ -114,9 +109,9 @@ impl Default for Ui {
 
         Self {
             should_quit: false,
-            pending_actions: vec![],
+            pending_actions: Default::default(),
             redraw: redraw.clone(),
-            active_dialog: None,
+            active_dialogs: Default::default(),
             selected_device: None,
             selected_profile: None,
             selected_tab: Default::default(),

@@ -16,7 +16,7 @@ path = "src/bin/settings_crawler.rs"
 opt-level = "z"
 
 [features]
-default = [ "fs-enable-logs", "ui-enable-image" ]
+default = [ "fs-enable-logs" ]
 ui-enable-logs = [ "ansi-to-tui" ]
 # required packages: libchafa-dev pkg-config libsysprof-capture-4-dev
 ui-enable-image = [ "image", "ratatui-image" ]

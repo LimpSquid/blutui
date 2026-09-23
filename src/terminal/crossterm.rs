@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use crossterm::event::{
     Event as CrosstermEvent, EventStream as CrosstermEventStream, KeyCode, KeyEvent, KeyModifiers,
 };
@@ -49,19 +49,8 @@ impl From<KeyEvent> for ui::KeyModifiers {
     }
 }
 
-#[derive(Subcommand)]
-enum Command {
-    Discover {
-        #[arg(long)]
-        watch: bool,
-    },
-}
-
 #[derive(Parser)]
-struct Args {
-    #[command(subcommand)]
-    command: Option<Command>,
-}
+struct Args;
 
 pub async fn run() -> anyhow::Result<()> {
     let _args = Args::parse();
