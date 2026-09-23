@@ -36,6 +36,7 @@ pub enum UserAction {
     EditProfile(ProfileId),
     NewProfile(String),
     DeleteProfile(StoredProfile),
+    UngroupAll,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -83,7 +84,7 @@ impl Ui {
     }
 
     pub fn show_notification<M: Into<String>>(&mut self, message: M) {
-        self.open_dialog(NotificationDialog::new(message, self.stylesheet));
+        self.open_dialog(NotificationDialog::new(message));
     }
 
     fn open_dialog<D: DialogComponent + 'static>(&mut self, dialog: D) {

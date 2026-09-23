@@ -223,6 +223,10 @@ pub struct DeviceGroupStatus {
 }
 
 impl DeviceGroupStatus {
+    pub fn am_i_grouped(&self) -> bool {
+        self.am_i_master() || self.am_i_slave() || self.am_i_zone_slave()
+    }
+
     pub fn am_i_slave(&self) -> bool {
         self.master.is_some()
     }

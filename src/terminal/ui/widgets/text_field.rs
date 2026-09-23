@@ -4,7 +4,7 @@ use ratatui::style::{Style, Styled, Stylize};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Paragraph, StatefulWidget, Widget, Wrap};
 
-use super::super::event::KeyCode;
+use super::super::event::{KeyCode, KeyModifiers};
 
 #[derive(Debug, Clone, Default)]
 pub struct TextFieldState {
@@ -26,8 +26,32 @@ impl TextFieldState {
         &self.value
     }
 
-    pub fn on_key_press(&mut self, code: KeyCode) {
+    pub fn on_key_press(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         match code {
+            KeyCode::Char('u') if modifiers.ctrl => self.value.clear(),
+            KeyCode::Char('w') if modifiers.ctrl => {
+                let mut start = self.value.len();
+
+                // Skip trailing whitespace
+                while let Some((idx, ch)) = self.value[..start].char_indices().next_back() {
+                    if ch.is_whitespace() {
+                        start = idx;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Delete the previous word
+                while let Some((idx, ch)) = self.value[..start].char_indices().next_back() {
+                    if ch.is_whitespace() {
+                        break;
+                    }
+
+                    start = idx;
+                }
+
+                self.value.truncate(start);
+            }
             KeyCode::Char(c) => self.value.push(c),
             KeyCode::Backspace => {
                 self.value.pop();

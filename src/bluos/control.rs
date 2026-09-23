@@ -25,6 +25,7 @@ enum Action {
     Back,
     Poll,
     Mute(bool),
+    Ungroup,
 }
 
 #[tracing::instrument(skip(client))]
@@ -78,6 +79,21 @@ async fn handle_action(device_id: DeviceId, client: &HttpClient, action: Action)
                     audio_settings,
                     player_settings,
                 )]
+            }
+            Action::Ungroup => {
+                let group_status = client.get_group_status(None).await?;
+                if group_status.am_i_master() {
+                    let endpoints_to_remove = group_status.slave
+                        .iter()
+                        .map(|s| (s.ip_addr, *s.port))
+                        .chain(group_status.zone_slave.iter().map(|s| (s.ip_addr, *s.port)))
+                        .collect::<Vec<_>>();
+
+                    client
+                        .remove_slaves(&endpoints_to_remove)
+                        .await?;
+                }
+                vec![]
             }
         };
 
@@ -438,6 +454,17 @@ impl DeviceController {
         let request = ActionRequest {
             device_id: device.into(),
             action: Action::Mute(on),
+        };
+        self.action.send(request).await?;
+
+        Ok(())
+    }
+
+    /// NB: Does nothing if device is not a master
+    pub async fn ungroup(&self, device: impl Into<DeviceId>) -> anyhow::Result<()> {
+        let request = ActionRequest {
+            device_id: device.into(),
+            action: Action::Ungroup,
         };
         self.action.send(request).await?;
 

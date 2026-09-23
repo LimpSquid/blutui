@@ -1,21 +1,14 @@
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
-use ratatui::style::Stylize;
-use ratatui::text::Text;
-use ratatui::widgets::{Block, BorderType, Paragraph, Widget, WidgetRef, Wrap};
-
 use super::prelude::*;
 
 #[derive(Debug)]
 pub struct NotificationDialog {
     message: String,
-    stylesheet: Stylesheet,
 }
 
 impl NotificationDialog {
-    pub fn new<M: Into<String>>(message: M, stylesheet: Stylesheet) -> Self {
+    pub fn new<M: Into<String>>(message: M) -> Self {
         Self {
             message: message.into(),
-            stylesheet,
         }
     }
 }
@@ -29,32 +22,32 @@ impl DialogComponent for NotificationDialog {
     }
 }
 
-impl WidgetRef for NotificationDialog {
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+impl Component for NotificationDialog {
+    fn render(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
         let dialog = Popup::new()
             // TODO: choose based on message length
             .constraints([Constraint::Length(60), Constraint::Length(20)])
             .block(
                 Block::bordered()
                     .border_type(BorderType::Thick)
-                    .bg(self.stylesheet.popup_background_color),
+                    .bg(ctx.stylesheet.popup_background_color),
             );
         let message = Paragraph::new(
             Text::from(self.message.as_str())
-                .fg(self.stylesheet.text_color)
+                .fg(ctx.stylesheet.text_color)
                 .bold(),
         )
         .wrap(Wrap { trim: false })
         .alignment(Alignment::Center);
-        let keybindings = Keybindings::new(&[("ESC", "Close")], self.stylesheet);
+        let keybindings = Keybindings::new(&[("ESC", "Close")]);
 
         let [_, body, footer] = dialog.drawable_area(area).layout(&Layout::new(
             Direction::Vertical,
             [Constraint::Max(1), Constraint::Fill(1), Constraint::Max(1)],
         ));
 
-        dialog.render(area, buf);
-        message.render(body, buf);
-        keybindings.render(footer, buf);
+        dialog.render(area, ctx.buffer);
+        message.render(body, ctx.buffer);
+        keybindings.render(footer, ctx);
     }
 }

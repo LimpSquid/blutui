@@ -106,7 +106,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                 }
             }
             (Tabs, KeyCode::Char('n' | 'N')) if ui.selected_tab == Profile => {
-                ui.open_dialog(NewProfileDialog::new(ui.stylesheet));
+                ui.open_dialog(NewProfileDialog::new());
             }
             (Tabs, KeyCode::Char('d' | 'D')) if ui.selected_tab == Profile => {
                 if let Some(profile) = ui
@@ -114,7 +114,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     .as_ref()
                     .and_then(|profile_id| state.find_profile(profile_id))
                 {
-                    ui.open_dialog(DeleteProfileDialog::new(profile.to_owned(), ui.stylesheet));
+                    ui.open_dialog(DeleteProfileDialog::new(profile.to_owned()));
                 }
             }
             (Tabs, KeyCode::Char('e' | 'E')) if ui.selected_tab == Profile => {

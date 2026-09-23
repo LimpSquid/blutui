@@ -1,23 +1,14 @@
-use ratatui::layout::{Alignment, Constraint, Direction, Layout};
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::{Block, BorderType, Paragraph, Widget, WidgetRef, Wrap};
-
 use super::prelude::*;
 use crate::profile::StoredProfile;
 
 #[derive(Debug)]
 pub struct DeleteProfileDialog {
     profile: StoredProfile,
-    stylesheet: Stylesheet,
 }
 
 impl DeleteProfileDialog {
-    pub fn new(profile: StoredProfile, stylesheet: Stylesheet) -> Self {
-        Self {
-            profile,
-            stylesheet,
-        }
+    pub fn new(profile: StoredProfile) -> Self {
+        Self { profile }
     }
 }
 
@@ -33,26 +24,26 @@ impl DialogComponent for DeleteProfileDialog {
     }
 }
 
-impl WidgetRef for DeleteProfileDialog {
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
+impl Component for DeleteProfileDialog {
+    fn render(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
         let dialog = Popup::with_title("Delete a profile")
             .constraints([Constraint::Length(60), Constraint::Length(10)])
             .block(
                 Block::bordered()
                     .border_type(BorderType::Thick)
-                    .bg(self.stylesheet.popup_background_color),
+                    .bg(ctx.stylesheet.popup_background_color),
             );
         let message = Paragraph::new(
             Line::from(format!(
                 "Are you sure you want to delete '{}'?",
                 self.profile.name()
             ))
-            .fg(self.stylesheet.error_color)
+            .fg(ctx.stylesheet.error_color)
             .bold(),
         )
         .wrap(Wrap { trim: false })
         .alignment(Alignment::Center);
-        let keybindings = Keybindings::new(&[("ESC", "No"), ("ENTER", "Yes")], self.stylesheet);
+        let keybindings = Keybindings::new(&[("ESC", "No"), ("ENTER", "Yes")]);
 
         let [_, body, footer] = dialog.drawable_area(area).layout(&Layout::new(
             Direction::Vertical,
@@ -63,8 +54,8 @@ impl WidgetRef for DeleteProfileDialog {
             ],
         ));
 
-        dialog.render(area, buf);
-        message.render(body, buf);
-        keybindings.render(footer, buf);
+        dialog.render(area, ctx.buffer);
+        message.render(body, ctx.buffer);
+        keybindings.render(footer, ctx);
     }
 }

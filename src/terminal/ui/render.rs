@@ -15,7 +15,13 @@ use ratatui::widgets::{
 use strum::IntoEnumIterator;
 
 #[allow(unused)]
-use super::{Ui, components::*, theme::*, utils::*, widgets};
+use super::{
+    Ui,
+    components::{self, *},
+    theme::*,
+    utils::*,
+    widgets,
+};
 use crate::bluos::{DevicePlaybackState, MAX_VOLUME_LEVEL};
 use crate::terminal::app::{AppState, BusyFlags, DeviceState};
 
@@ -23,6 +29,18 @@ struct RenderContext<'a, 'b> {
     frame: &'a mut Frame<'b>,
     state: &'a AppState,
     ui: &'a mut Ui,
+}
+
+// NB: This must be a macro so we can hold a mutable borrow of fields in `RenderContext` that
+// do not overlap with fields of components::RenderContext
+macro_rules! component_context {
+    ($ctx:expr) => {
+        ComponentContext {
+            buffer: ($ctx).frame.buffer_mut(),
+            state: ($ctx).state,
+            stylesheet: &($ctx).ui.stylesheet,
+        }
+    };
 }
 
 #[derive(
@@ -182,7 +200,7 @@ fn render_busy_indicator(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 #[tracing::instrument(skip_all)]
 fn render_dialog(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     if let Some(dialog) = ctx.ui.active_dialogs.front() {
-        dialog.render_ref(area, ctx.frame.buffer_mut());
+        dialog.render(area, &mut component_context!(ctx));
     }
 }
 
@@ -253,8 +271,7 @@ fn render_keybindings(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     })
     .collect();
 
-    ctx.frame
-        .render_widget(Keybindings::new(&keybindings, ctx.ui.stylesheet), area);
+    Keybindings::new(&keybindings).render(area, &mut component_context!(ctx));
 }
 
 fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {

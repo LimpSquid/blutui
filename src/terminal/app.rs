@@ -47,6 +47,7 @@ bitflags::bitflags! {
 pub struct DeviceState {
     pub device: Device,
     pub status: Option<DeviceStatus>,
+    // Invariant: if `status` is `Some` so is `status_updated_at`
     pub status_updated_at: Option<Instant>,
     pub volume: Option<DeviceVolume>,
     pub group_status: Option<DeviceGroupStatus>,
@@ -387,6 +388,17 @@ impl App {
                     );
                     self.ui
                         .show_notification(format!("{:?}", anyhow::anyhow!(error)));
+                }
+            }
+            UserAction::UngroupAll => {
+                for device_id in self
+                    .state
+                    .device_state
+                    .iter()
+                    .filter(|(_, s)| s.group_status.as_ref().is_none_or(|s| s.am_i_master()))
+                    .map(|(device_id, _)| *device_id)
+                {
+                    self.device_controller.ungroup(device_id).await?;
                 }
             }
         };
