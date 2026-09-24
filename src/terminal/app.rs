@@ -395,7 +395,7 @@ impl App {
                     .state
                     .device_state
                     .iter()
-                    .filter(|(_, s)| s.group_status.as_ref().is_none_or(|s| s.am_i_master()))
+                    .filter(|(_, s)| s.group_status.as_ref().is_some_and(|s| s.am_i_master()))
                     .map(|(device_id, _)| *device_id)
                 {
                     self.device_controller.ungroup(device_id).await?;
