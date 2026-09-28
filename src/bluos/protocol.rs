@@ -422,3 +422,12 @@ pub enum SettingState {
     On,
     Off,
 }
+
+impl SettingState {
+    pub fn into_boolean(self) -> bool {
+        match self {
+            Self::On => true,
+            Self::Off => false,
+        }
+    }
+}

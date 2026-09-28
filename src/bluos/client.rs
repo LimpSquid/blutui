@@ -291,6 +291,42 @@ impl HttpClient {
         Ok(())
     }
 
+    pub async fn set_equalizer_upmixer(&self, state: SettingState) -> anyhow::Result<()> {
+        self.client
+            .post(self.api_path("alsa_setting")?)
+            .form(&[("eq-upmix", state.into_boolean())])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
+    pub async fn set_equalizer_virtualizer(&self, state: SettingState) -> anyhow::Result<()> {
+        self.client
+            .post(self.api_path("alsa_setting")?)
+            .form(&[("eq-virt", state.into_boolean())])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
+    pub async fn set_equalizer_volume_leveler(&self, state: SettingState) -> anyhow::Result<()> {
+        self.client
+            .post(self.api_path("alsa_setting")?)
+            .form(&[("eq-vlamp", state.into_boolean())])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
     pub async fn set_volume_level(
         &self,
         level: u8,

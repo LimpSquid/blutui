@@ -460,10 +460,9 @@ impl NewProfileDialog {
                 DeviceSettingKind::TrebleEq.optional(),
                 DeviceSettingKind::BassEq.optional(),
                 DeviceSettingKind::CenterTrim.optional(),
-                // TODO: not implemented yet by the profile
-                // DeviceSettingKind::SurroundUpmixer.optional(),
-                // DeviceSettingKind::VolumeLeveler.optional(),
-                // DeviceSettingKind::Virtualizer.optional(),
+                DeviceSettingKind::SurroundUpmixer.optional(),
+                DeviceSettingKind::VolumeLeveler.optional(),
+                DeviceSettingKind::Virtualizer.optional(),
             ],
         };
 
@@ -602,6 +601,9 @@ impl NewProfileDialog {
                         treble_eq: d.treble_eq,
                         bass_eq: d.bass_eq,
                         center_trim: d.center_trim,
+                        surround_upmixer: d.surround_upmixer,
+                        virtualizer: d.virtualizer,
+                        volume_leveler: d.volume_leveler,
                     })
                     .collect();
 
@@ -644,6 +646,8 @@ impl NewProfileDialog {
                     bass_eq: master.bass_eq,
                     center_trim: master.center_trim,
                     surround_upmixer: master.surround_upmixer,
+                    virtualizer: master.virtualizer,
+                    volume_leveler: master.volume_leveler,
                     led_brightness: master.led_brightness,
                     // TODO
                     group_name: None,
@@ -1161,14 +1165,15 @@ impl DialogComponent for NewProfileDialog {
                             .iter_mut()
                             .find(|d| d.device_id == device_id)?,
                     ))
-                })
-                    && setting.kind() == DeviceSettingKind::NodeName {
+                }) {
+                    if setting.kind() == DeviceSettingKind::NodeName {
                         device.node_name = if text_input.is_empty() {
                             None
                         } else {
                             Some(text_input)
                         }
                     }
+                }
                 self.inline_text_input = None;
                 None
             }

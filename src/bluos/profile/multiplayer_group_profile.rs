@@ -82,6 +82,14 @@ pub struct MultiplayerGroupProfile {
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
     pub surround_upmixer: Option<SettingState>,
+    /// Virtualizer, if `None` use the current virtualizer value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtualizer: Option<SettingState>,
+    /// Volume leveler, if `None` use the current volume leveler value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_leveler: Option<SettingState>,
     /// Led brightness, if `None` use the current brightness
     #[serde(skip_serializing_if = "Option::is_none")]
     pub led_brightness: Option<LedBrightness>,
@@ -397,6 +405,15 @@ impl StateMachine for MultiplayerGroupProfile {
                 }
                 if let Some(db) = self.center_trim {
                     client.set_equalizer_center_trim(db).await?;
+                }
+                if let Some(state) = self.surround_upmixer {
+                    client.set_equalizer_upmixer(state).await?;
+                }
+                if let Some(state) = self.virtualizer {
+                    client.set_equalizer_virtualizer(state).await?;
+                }
+                if let Some(state) = self.volume_leveler {
+                    client.set_equalizer_volume_leveler(state).await?;
                 }
                 if let Some(audio_preset) = self.audio_preset {
                     client.set_audio_preset(audio_preset).await?;

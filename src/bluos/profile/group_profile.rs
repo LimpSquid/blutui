@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 
 use super::super::client::ZoneMode;
-use super::super::protocol::{AudioPreset, LedBrightness};
+use super::super::protocol::{AudioPreset, LedBrightness, SettingState};
 use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
 use super::common::*;
 use crate::types::DeviceId;
@@ -52,6 +52,18 @@ pub struct GroupProfileDevice {
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
     pub center_trim: Option<f64>,
+    /// Surround upmixer, if `None` use the current surround upmixer value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surround_upmixer: Option<SettingState>,
+    /// Virtualizer, if `None` use the current virtualizer value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtualizer: Option<SettingState>,
+    /// Volume leveler, if `None` use the current volume leveler value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_leveler: Option<SettingState>,
 }
 
 impl GroupProfileDevice {
@@ -282,6 +294,15 @@ impl StateMachine for GroupProfile {
                     }
                     if let Some(db) = profile.center_trim {
                         client.set_equalizer_center_trim(db).await?;
+                    }
+                    if let Some(state) = profile.surround_upmixer {
+                        client.set_equalizer_upmixer(state).await?;
+                    }
+                    if let Some(state) = profile.virtualizer {
+                        client.set_equalizer_virtualizer(state).await?;
+                    }
+                    if let Some(state) = profile.volume_leveler {
+                        client.set_equalizer_volume_leveler(state).await?;
                     }
                     if let Some(audio_preset) = profile.audio_preset {
                         client.set_audio_preset(audio_preset).await?;
