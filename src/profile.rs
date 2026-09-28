@@ -9,6 +9,7 @@ use notify::{
     Watcher,
 };
 use tokio::fs::{DirEntry, File, read_dir, read_to_string};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::broadcast;
 use tokio::time::sleep;
 
@@ -203,11 +204,15 @@ impl ProfileManager {
     }
 }
 
-pub async fn create_profile(profile_name: &str) -> anyhow::Result<PathBuf> {
+/// NB: this overwrites the profilegit  if it already exists
+pub async fn create_profile(profile_name: &str, profile: &Profile) -> anyhow::Result<PathBuf> {
     validate_profile_name(profile_name)?;
 
     let path = profiles_dir().join(format!("{profile_name}.{EXTENSION}"));
-    File::create_new(&path).await?;
+    let mut file = File::create(&path).await?;
+    let contents = yaml_serde::to_string(profile)
+        .map_err(|e| anyhow::anyhow!("failed to serialize profile: {e}"))?;
+    file.write_all(contents.as_bytes()).await?;
 
     Ok(path)
 }

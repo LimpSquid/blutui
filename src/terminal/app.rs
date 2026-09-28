@@ -57,6 +57,34 @@ pub struct DeviceState {
     pub player_settings: Option<DevicePlayerSettings>,
 }
 
+impl DeviceState {
+    pub fn device_name(&self) -> Option<String> {
+        self.group_status
+            .as_ref()
+            .and_then(|s| s.name.clone())
+            .or_else(|| {
+                self.device
+                    .attributes
+                    .first()
+                    .and_then(|a| a.fields.get("name").cloned())
+            })
+    }
+
+    pub fn device_model(&self) -> Option<String> {
+        self.group_status
+            .as_ref()
+            .map(|s| s.model.clone())
+            .or_else(|| {
+                self.device
+                    .attributes
+                    .iter()
+                    .flat_map(|a| a.fields.iter())
+                    .find(|(k, _)| *k == "model")
+                    .map(|(_, v)| v.to_owned())
+            })
+    }
+}
+
 impl From<Device> for DeviceState {
     fn from(device: Device) -> Self {
         Self {
@@ -366,17 +394,13 @@ impl App {
                     && let Err(error) = open_external_editor(&p.filepath)
                 {
                     tracing::error!(?error, "failed to open external editor");
-                    self.ui
-                        .show_notification(format!("{:?}", anyhow::anyhow!(error)));
+                    self.ui.show_notification(format!("{:?}", error));
                 }
             }
-            UserAction::NewProfile(profile_name) => {
-                if let Ok(path) = create_profile(profile_name.as_str()).await
-                    && let Err(error) = open_external_editor(path)
-                {
-                    tracing::error!(?error, "failed to open external editor");
-                    self.ui
-                        .show_notification(format!("{:?}", anyhow::anyhow!(error)));
+            UserAction::NewProfile(profile_name, profile) => {
+                if let Err(error) = create_profile(profile_name.as_str(), &profile).await {
+                    tracing::error!(?error, "failed to create profile");
+                    self.ui.show_notification(format!("{:?}", error));
                 }
             }
             UserAction::DeleteProfile(profile) => {
@@ -386,8 +410,7 @@ impl App {
                         filepath = %profile.filepath.to_string_lossy(),
                         "failed to remove profile"
                     );
-                    self.ui
-                        .show_notification(format!("{:?}", anyhow::anyhow!(error)));
+                    self.ui.show_notification(format!("{:?}", error));
                 }
             }
             UserAction::UngroupAll => {

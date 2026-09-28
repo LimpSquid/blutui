@@ -15,6 +15,7 @@ use tokio::sync::Notify;
 
 use self::components::BoxedComponent;
 use self::components::dialog::{DialogComponent, NotificationDialog};
+use crate::bluos::profile::Profile;
 use crate::profile::StoredProfile;
 use crate::types::{DeviceId, GroupId, ProfileId};
 
@@ -34,7 +35,7 @@ pub enum UserAction {
     Unmute(DeviceId),
     ApplyProfile(ProfileId),
     EditProfile(ProfileId),
-    NewProfile(String),
+    NewProfile(String, Profile),
     DeleteProfile(StoredProfile),
     UngroupAll,
 }

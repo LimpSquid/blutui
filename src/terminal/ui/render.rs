@@ -295,42 +295,24 @@ fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect)
         let list = ctx
             .state
             .sorted_device_state_iter()
-            .map(|(_, state)| (&state.device, &state.group_status))
             .enumerate()
-            .map(|(index, (device, group_status))| {
-                let device_last_update = device.last_update;
-                let device_name = group_status
-                    .as_ref()
-                    .and_then(|s| s.name.clone())
-                    .unwrap_or_else(|| {
-                        device
-                            .attributes
-                            .first()
-                            .and_then(|a| a.fields.get("name").cloned())
-                            .unwrap_or_else(|| device.id.to_string())
-                    });
-                let device_model = group_status
-                    .as_ref()
-                    .map(|s| s.model.clone())
-                    .unwrap_or_else(|| {
-                        device
-                            .attributes
-                            .iter()
-                            .flat_map(|a| a.fields.iter())
-                            .find(|(k, _)| *k == "model")
-                            .map(|(_, v)| v.to_owned())
-                            .unwrap_or("N/A".to_string())
-                    });
-                if ctx
-                    .ui
-                    .selected_device
-                    .is_some_and(|device_id| device_id == device.id)
-                {
+            .map(|(index, (device_id, state))| {
+                if ctx.ui.selected_device.is_some_and(|id| id == *device_id) {
                     selected = Some(index);
                 }
 
+                let DeviceState {
+                    device,
+                    group_status,
+                    ..
+                } = &state;
+
+                let device_name = state.device_name().unwrap_or_else(|| device_id.to_string());
+                let device_model = state.device_model().unwrap_or("N/A".to_string());
+                let device_last_update = device.last_update;
+
                 vec![Line::from(vec![
-                    device_name.to_string().fg(ctx.ui.stylesheet.text_color),
+                    device_name.fg(ctx.ui.stylesheet.text_color),
                     format!(" ({device_model})").fg(ctx.ui.stylesheet.text_color_sub),
                     if let Some((group_color, group_status)) = group_status
                         .as_ref()

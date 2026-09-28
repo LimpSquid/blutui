@@ -44,7 +44,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
         UserEvent::Key(code, modifiers) => match (ui.window_focus, code) {
             // Re-route input to dialog and handle event
             (_, _) if let Some(dialog) = ui.active_dialogs.front_mut() => {
-                match dialog.on_key_press(code, modifiers) {
+                match dialog.on_key_press(code, modifiers, state) {
                     Some(DialogEvent::Actions(actions)) => ui.actions(actions),
                     Some(DialogEvent::Submitted(actions)) => {
                         ui.actions(actions);
@@ -52,6 +52,10 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                     }
                     Some(DialogEvent::Closed) => {
                         ui.active_dialogs.pop_front();
+                    }
+                    Some(DialogEvent::ClosedErr(error)) => {
+                        ui.active_dialogs.pop_front();
+                        ui.show_notification(format!("{:?}", error));
                     }
                     None => {}
                 }

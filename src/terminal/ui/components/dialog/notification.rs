@@ -14,7 +14,12 @@ impl NotificationDialog {
 }
 
 impl DialogComponent for NotificationDialog {
-    fn on_key_press(&mut self, code: KeyCode, _modifiers: KeyModifiers) -> Option<DialogEvent> {
+    fn on_key_press(
+        &mut self,
+        code: KeyCode,
+        _: KeyModifiers,
+        _: &AppState,
+    ) -> Option<DialogEvent> {
         match code {
             KeyCode::Esc => Some(DialogEvent::Closed),
             _ => None,

@@ -13,7 +13,12 @@ impl DeleteProfileDialog {
 }
 
 impl DialogComponent for DeleteProfileDialog {
-    fn on_key_press(&mut self, code: KeyCode, _modifiers: KeyModifiers) -> Option<DialogEvent> {
+    fn on_key_press(
+        &mut self,
+        code: KeyCode,
+        _: KeyModifiers,
+        _: &AppState,
+    ) -> Option<DialogEvent> {
         match code {
             KeyCode::Esc => Some(DialogEvent::Closed),
             KeyCode::Enter => Some(DialogEvent::Submitted(vec![UserAction::DeleteProfile(
