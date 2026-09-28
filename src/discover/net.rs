@@ -17,7 +17,7 @@ const REFRESH_INTERVAL_SLOW: Duration = Duration::from_secs(90);
 const REFRESH_INTERVAL_FAST: Duration = Duration::from_secs(10);
 const REFRESH_REPEAT_N_TIMES: usize = 3;
 const REFRESH_REPEAT_INTERVAL: Duration = Duration::from_secs(1);
-const TCP_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
+const TCP_CONNECT_TIMEOUT: Duration = Duration::from_millis(1000);
 const TCP_PROBE_INTERVAL_SLOW: Duration = Duration::from_secs(60);
 const TCP_PROBE_INTERVAL_FAST: Duration = Duration::from_secs(2);
 
@@ -93,13 +93,23 @@ async fn processor(
                 },
                 // Handle TCP probing
                 _ = tcp_probe_interval.tick() => {
-                    for device in std::mem::take(&mut devices) {
-                        if let Ok(Ok(_)) = timeout(
-                            TCP_CONNECT_TIMEOUT,
-                            TcpStream::connect(format!("{}:{}", device.ip_addr, device.api_port())),
-                        )
-                        .await
-                        {
+                    let probe_futs = std::mem::take(&mut devices)
+                        .into_iter()
+                        .map(|device| async move {
+                            let connected = matches!(
+                                timeout(
+                                    TCP_CONNECT_TIMEOUT,
+                                    TcpStream::connect(format!("{}:{}", device.ip_addr, device.api_port())),
+                                )
+                                .await,
+                                Ok(Ok(_))
+                            );
+
+                            (device, connected)
+                        });
+
+                    for (device, connected) in futures::future::join_all(probe_futs).await {
+                        if connected {
                             devices.insert(device);
                         } else {
                             event_bus.publish_lossy(Event::DeviceGone(device));
@@ -125,7 +135,7 @@ async fn processor(
                         Ok(packet) => {
                             event_bus.publish_lossy(Event::DiscoveryAnnouncement(
                                 from,
-                                buf[..size].to_vec().into(),
+                                buf[..size].to_vec(),
                             ));
 
                             match packet.message {

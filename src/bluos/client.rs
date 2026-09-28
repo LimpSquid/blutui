@@ -12,7 +12,7 @@ use crate::discover::Device;
 /// The long-polling timeout passed to the BluOS device
 const DEFAULT_POLL_TIMEOUT: u8 = 60; // In seconds
 /// The timeout grace period of our HTTP client
-const POLL_GRACE_PERIOD: u64 = 2; // In seconds
+const POLL_GRACE_PERIOD: u64 = 5; // In seconds
 /// The default request timeout if not long-polling
 const REQUEST_TIMEOUT: u64 = 5; // In seconds
 /// The timeout for the add slaves request
