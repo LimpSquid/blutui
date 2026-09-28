@@ -1,9 +1,5 @@
-use std::marker::PhantomData;
-use std::ops::RangeInclusive;
-
 use anyhow::Context;
-use itertools::{Either, Itertools};
-use ratatui::text::{ToLine, ToSpan};
+use itertools::Itertools;
 use strum::IntoEnumIterator;
 
 use super::prelude::*;
@@ -14,13 +10,12 @@ use crate::bluos::profile::{
 use crate::bluos::{AudioPreset, LedBrightness, SettingState};
 use crate::profile::validate_profile_name;
 use crate::terminal::app::DeviceState;
-use crate::terminal::ui::components::dialog::new_profile::DeviceSetting::{Optional, Required};
-use crate::types::{DeviceId, ProfileId};
+use crate::types::DeviceId;
 
 const DB_STEP_RESOLUTION: f64 = 0.5;
 const VOLUME_LEVEL_RESOLUTION: f64 = 1.0;
 
-fn cycle<T, I>(current: Option<T>, values: I) -> Option<T>
+fn cycle_or_unset<T, I>(current: Option<T>, values: I) -> Option<T>
 where
     T: PartialEq + Copy,
     I: IntoIterator<Item = T>,
@@ -37,19 +32,20 @@ where
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum_macros::EnumIter)]
 enum ProfileType {
+    SingleDevice,
     #[default]
     NormalGroup,
     MultiplayerGroup,
-    // TODO
-    // SingleDevice
-    // HomeTheaterGroup
+    HomeTheaterGroup,
 }
 
 impl ProfileType {
     fn list_text(&self) -> &'static str {
         match self {
+            Self::SingleDevice => "Single Device",
             Self::NormalGroup => "Normal Group",
             Self::MultiplayerGroup => "Multi Player Group",
+            Self::HomeTheaterGroup => "Home-theater Group",
         }
     }
 
@@ -59,33 +55,39 @@ impl ProfileType {
                 "A standard group of BluOS players that can be controlled individually."
             }
             Self::MultiplayerGroup => "Multiple BluOS players playing the same audio in sync.",
-            // Self::SingleDevice => "A single BluOS player.",
-            // Self::HomeTheaterGroup => {
-            //     "Multiple BluOS players in a home-theater surround sound setup."
-            // }
+            Self::SingleDevice => "A single BluOS player.",
+            Self::HomeTheaterGroup => {
+                "Multiple BluOS players in a home-theater surround sound setup."
+            }
         }
     }
 
-    fn required_devices(&self) -> RangeInclusive<usize> {
+    fn min_num_devices(&self) -> usize {
         match self {
-            Self::NormalGroup => 2..=usize::MAX,
-            Self::MultiplayerGroup => 2..=usize::MAX,
-            // Self::SingleDevice => 1,
-            // Self::HomeTheaterGroup => 3,
+            Self::SingleDevice => 1,
+            Self::NormalGroup => 2,
+            Self::MultiplayerGroup => 2,
+            Self::HomeTheaterGroup => 3,
+        }
+    }
+
+    fn max_num_devices(&self) -> usize {
+        match self {
+            Self::SingleDevice => 1,
+            Self::NormalGroup => usize::MAX,
+            Self::MultiplayerGroup => usize::MAX,
+            Self::HomeTheaterGroup => 3,
         }
     }
 
     fn is_group(&self) -> bool {
         matches!(
             self,
-            Self::NormalGroup | Self::MultiplayerGroup /* | Self::MultiplayerGroup */
+            Self::NormalGroup | Self::MultiplayerGroup | Self::HomeTheaterGroup
         )
     }
     fn is_zone_group(&self) -> bool {
-        matches!(
-            self,
-            Self::MultiplayerGroup /* | Self::HomeTheaterGroup */
-        )
+        matches!(self, Self::MultiplayerGroup | Self::HomeTheaterGroup)
     }
 }
 
@@ -167,7 +169,8 @@ impl DeviceSettings {
     }
 
     fn adjust(&mut self, setting: &DeviceSetting, step: i8) {
-        let (current, step_resolution) = match setting.kind() {
+        let kind = setting.kind();
+        let (current, step_resolution) = match kind {
             DeviceSettingKind::TrebleEq => (self.treble_eq.unwrap_or_default(), DB_STEP_RESOLUTION),
             DeviceSettingKind::BassEq => (self.bass_eq.unwrap_or_default(), DB_STEP_RESOLUTION),
             DeviceSettingKind::CenterTrim => {
@@ -185,21 +188,21 @@ impl DeviceSettings {
         let delta = step as f64 * step_resolution;
         let new = current + delta;
         // TODO: these values should come from the settings of the BluOS device itself
-        let clamped = match setting.kind() {
+        let clamped = match kind {
             DeviceSettingKind::TrebleEq
             | DeviceSettingKind::BassEq
             | DeviceSettingKind::CenterTrim => new.clamp(-6.0, 6.0),
             DeviceSettingKind::VolumeTrim => new.clamp(-10.0, 10.0),
             DeviceSettingKind::VolumeLevel => new.clamp(0.0, 100.0),
-            _ => return,
+            _ => unreachable!(),
         };
-        match setting.kind() {
+        match kind {
             DeviceSettingKind::TrebleEq => self.treble_eq = Some(clamped),
             DeviceSettingKind::BassEq => self.bass_eq = Some(clamped),
             DeviceSettingKind::CenterTrim => self.center_trim = Some(clamped),
             DeviceSettingKind::VolumeTrim => self.volume_trim = Some(clamped),
             DeviceSettingKind::VolumeLevel => self.volume_level = Some(clamped as u8),
-            _ => return,
+            _ => unreachable!(),
         }
     }
 
@@ -209,22 +212,22 @@ impl DeviceSettings {
                 self.volume_level = self.volume_level.map(|_| None).unwrap_or(Some(0));
             }
             DeviceSettingKind::LedBrightness => {
-                self.led_brightness = cycle(self.led_brightness, LedBrightness::iter())
+                self.led_brightness = cycle_or_unset(self.led_brightness, LedBrightness::iter())
             }
             DeviceSettingKind::AudioPreset => {
-                self.audio_preset = cycle(self.audio_preset, AudioPreset::iter())
+                self.audio_preset = cycle_or_unset(self.audio_preset, AudioPreset::iter())
             }
             DeviceSettingKind::VolumeTrim => {
                 self.volume_trim = self.volume_trim.map(|_| None).unwrap_or_default()
             }
             DeviceSettingKind::SurroundUpmixer => {
-                self.surround_upmixer = cycle(self.surround_upmixer, SettingState::iter());
+                self.surround_upmixer = cycle_or_unset(self.surround_upmixer, SettingState::iter());
             }
             DeviceSettingKind::VolumeLeveler => {
-                self.volume_leveler = cycle(self.volume_leveler, SettingState::iter());
+                self.volume_leveler = cycle_or_unset(self.volume_leveler, SettingState::iter());
             }
             DeviceSettingKind::Virtualizer => {
-                self.virtualizer = cycle(self.virtualizer, SettingState::iter());
+                self.virtualizer = cycle_or_unset(self.virtualizer, SettingState::iter());
             }
             DeviceSettingKind::TrebleEq => {
                 self.treble_eq = self.treble_eq.map(|_| None).unwrap_or(Some(0.0));
@@ -245,7 +248,8 @@ impl DeviceSettings {
         } else {
             "unset".fg(stylesheet.text_color)
         };
-        let text = match setting.kind() {
+
+        match setting.kind() {
             DeviceSettingKind::VolumeLevel => match self.volume_level {
                 Some(v) => format!("{v}").fg(stylesheet.text_color),
                 None => unset_text,
@@ -255,7 +259,7 @@ impl DeviceSettings {
                 None => unset_text,
             },
             DeviceSettingKind::NodeName => match self.node_name.as_deref() {
-                Some(n) if !n.trim().is_empty() => n.fg(stylesheet.text_color),
+                Some(s) if !s.is_empty() => s.fg(stylesheet.text_color),
                 _ => unset_text,
             },
             DeviceSettingKind::AudioPreset => match self.audio_preset {
@@ -290,21 +294,6 @@ impl DeviceSettings {
                 Some(v) => v.to_string().fg(stylesheet.text_color),
                 None => unset_text,
             },
-        };
-
-        Span::from(text)
-    }
-
-    fn to_group_profile_device(&self) -> GroupProfileDevice {
-        GroupProfileDevice {
-            device_id: self.device_id,
-            volume_level: self.volume_level,
-            led_brightness: self.led_brightness,
-            node_name: self.node_name.clone(),
-            audio_preset: self.audio_preset,
-            treble_eq: self.treble_eq,
-            bass_eq: self.bass_eq,
-            center_trim: self.center_trim,
         }
     }
 }
@@ -316,14 +305,52 @@ enum DeviceSetting {
 }
 
 impl DeviceSetting {
+    fn is_available(self, state: &DeviceState) -> bool {
+        match self.kind() {
+            DeviceSettingKind::LedBrightness => state
+                .player_settings
+                .as_ref()
+                .is_some_and(|s| s.led_brightness.is_some()),
+            DeviceSettingKind::AudioPreset => state
+                .audio_settings
+                .as_ref()
+                .is_some_and(|s| s.audio_preset.is_some()),
+            DeviceSettingKind::TrebleEq => state
+                .audio_settings
+                .as_ref()
+                .is_some_and(|s| s.equalizer_treble_db.is_some()),
+            DeviceSettingKind::BassEq => state
+                .audio_settings
+                .as_ref()
+                .is_some_and(|s| s.equalizer_bass_db.is_some()),
+            DeviceSettingKind::CenterTrim => state
+                .audio_settings
+                .as_ref()
+                .is_some_and(|s| s.equalizer_center_trim_db.is_some()),
+            DeviceSettingKind::SurroundUpmixer => state
+                .audio_settings
+                .as_ref()
+                .is_some_and(|s| s.surround_upmixer.is_some()),
+            DeviceSettingKind::VolumeLeveler => state
+                .audio_settings
+                .as_ref()
+                .is_some_and(|s| s.volume_leveler.is_some()),
+            DeviceSettingKind::Virtualizer => state
+                .audio_settings
+                .as_ref()
+                .is_some_and(|s| s.virtualizer.is_some()),
+            _ => true,
+        }
+    }
+
     fn is_required(&self) -> bool {
         matches!(self, Self::Required(_))
     }
 
     fn kind(&self) -> DeviceSettingKind {
         match self {
-            Required(kind) => *kind,
-            Optional(kind) => *kind,
+            Self::Required(kind) => *kind,
+            Self::Optional(kind) => *kind,
         }
     }
 
@@ -373,10 +400,10 @@ impl DeviceSettingKind {
 pub struct NewProfileDialog {
     step: WizardStep,
     selected_profile_type: ProfileType,
-    /// The first entry is the group master, the remaining entries are slaves
+    /// If the selected profile type is a (zone) group then the first
+    /// entry is the group master, the remaining entries are slaves
     selected_devices_for_group: Vec<DeviceSettings>,
     profile_name_input: TextFieldState,
-
     focused_device: Option<DeviceId>,
     focused_settings_row: usize,
     inline_text_input: Option<TextFieldState>,
@@ -393,7 +420,7 @@ impl NewProfileDialog {
             .iter()
             .position(|d| d.device_id == *device_id)
         {
-            Some(0) => DeviceRole::Master,
+            Some(0) if self.selected_profile_type.is_group() => DeviceRole::Master,
             Some(_) => DeviceRole::Slave,
             None => DeviceRole::None,
         }
@@ -401,7 +428,7 @@ impl NewProfileDialog {
 
     fn device_settings(&self, device_id: &DeviceId, state: &AppState) -> Vec<DeviceSetting> {
         let profile_settings = match self.selected_profile_type {
-            ProfileType::MultiplayerGroup
+            ProfileType::MultiplayerGroup | ProfileType::HomeTheaterGroup
                 if self
                     .selected_devices_for_group
                     .first()
@@ -420,12 +447,12 @@ impl NewProfileDialog {
                     DeviceSettingKind::Virtualizer.optional(),
                 ]
             }
-            ProfileType::MultiplayerGroup => vec![
+            ProfileType::MultiplayerGroup | ProfileType::HomeTheaterGroup => vec![
                 DeviceSettingKind::NodeName.required(),
                 DeviceSettingKind::VolumeTrim.optional(),
                 DeviceSettingKind::LedBrightness.optional(),
             ],
-            _ => vec![
+            ProfileType::SingleDevice | ProfileType::NormalGroup => vec![
                 DeviceSettingKind::VolumeLevel.optional(),
                 DeviceSettingKind::LedBrightness.optional(),
                 DeviceSettingKind::NodeName.optional(),
@@ -433,80 +460,19 @@ impl NewProfileDialog {
                 DeviceSettingKind::TrebleEq.optional(),
                 DeviceSettingKind::BassEq.optional(),
                 DeviceSettingKind::CenterTrim.optional(),
+                // TODO: not implemented yet by the profile
+                // DeviceSettingKind::SurroundUpmixer.optional(),
+                // DeviceSettingKind::VolumeLeveler.optional(),
+                // DeviceSettingKind::Virtualizer.optional(),
             ],
         };
 
         profile_settings
             .into_iter()
             .filter(|s| {
-                let kind = s.kind();
-                let Some(DeviceState {
-                    audio_settings,
-                    player_settings,
-                    ..
-                }) = state.find_device(device_id)
-                else {
-                    return true;
-                };
-
-                if kind == DeviceSettingKind::LedBrightness
-                    && player_settings
-                        .as_ref()
-                        .is_some_and(|s| s.led_brightness.is_none())
-                {
-                    return false;
-                }
-                if kind == DeviceSettingKind::AudioPreset
-                    && audio_settings
-                        .as_ref()
-                        .is_some_and(|s| s.audio_preset.is_none())
-                {
-                    return false;
-                }
-                if kind == DeviceSettingKind::TrebleEq
-                    && audio_settings
-                        .as_ref()
-                        .is_some_and(|s| s.equalizer_treble_db.is_none())
-                {
-                    return false;
-                }
-                if kind == DeviceSettingKind::BassEq
-                    && audio_settings
-                        .as_ref()
-                        .is_some_and(|s| s.equalizer_bass_db.is_none())
-                {
-                    return false;
-                }
-                if kind == DeviceSettingKind::CenterTrim
-                    && audio_settings
-                        .as_ref()
-                        .is_some_and(|s| s.equalizer_center_trim_db.is_none())
-                {
-                    return false;
-                }
-                if kind == DeviceSettingKind::SurroundUpmixer
-                    && audio_settings
-                        .as_ref()
-                        .is_some_and(|s| s.surround_upmixer.is_none())
-                {
-                    return false;
-                }
-                if kind == DeviceSettingKind::VolumeLeveler
-                    && audio_settings
-                        .as_ref()
-                        .is_some_and(|s| s.volume_leveler.is_none())
-                {
-                    return false;
-                }
-                if kind == DeviceSettingKind::Virtualizer
-                    && audio_settings
-                        .as_ref()
-                        .is_some_and(|s| s.virtualizer.is_none())
-                {
-                    return false;
-                }
-
-                true
+                state
+                    .find_device(device_id)
+                    .is_none_or(|state| s.is_available(state))
             })
             .collect()
     }
@@ -533,20 +499,28 @@ impl NewProfileDialog {
         device.adjust(&setting, step);
     }
 
-    fn selection_block_reason(&self, state: &AppState) -> Option<&'static str> {
-        let required_devices = self.selected_profile_type.required_devices();
-
+    fn selection_block_reason(&self, state: &AppState) -> Option<String> {
         if self.selected_profile_type.is_group() {
             if self.selected_devices_for_group.is_empty() {
-                return Some("select a single master device");
+                return Some("select a single master device".to_owned());
             }
 
-            if !required_devices.contains(&self.selected_devices_for_group.len()) {
-                return Some("select required amount of slaves");
+            if self.selected_devices_for_group.len() < self.selected_profile_type.min_num_devices()
+            {
+                return Some(format!(
+                    "select min required amount of slaves: {}",
+                    self.selected_profile_type
+                        .min_num_devices()
+                        .saturating_sub(1),
+                ));
             }
         } else {
-            if !required_devices.contains(&self.selected_devices_for_group.len()) {
-                return Some("select required amount of devices");
+            if self.selected_devices_for_group.len() < self.selected_profile_type.min_num_devices()
+            {
+                return Some(format!(
+                    "select min required amount of devices: {}",
+                    self.selected_profile_type.min_num_devices(),
+                ));
             }
         }
 
@@ -559,7 +533,7 @@ impl NewProfileDialog {
                 .and_then(|s| s.zone_options.as_ref())
                 .is_some_and(|o| o.is_master_capable())
             {
-                return Some("selected master device is not master capable");
+                return Some("selected master device is not master capable".to_owned());
             }
 
             if !self.selected_devices_for_group.iter().skip(1).all(|d| {
@@ -569,7 +543,7 @@ impl NewProfileDialog {
                     .and_then(|s| s.zone_options.as_ref())
                     .is_some_and(|o| o.is_slave_capable())
             }) {
-                return Some("all slaves must be slave-capable devices");
+                return Some("all slaves must be slave-capable devices".to_owned());
             }
         }
 
@@ -577,34 +551,36 @@ impl NewProfileDialog {
     }
 
     fn edit_block_reason(&self, state: &AppState) -> Option<String> {
-        let mut devices = self.selected_devices_for_group.clone();
-        let focused_device_index = devices
-            .iter()
-            .position(|d| {
-                self.focused_device
-                    .is_some_and(|device_id| d.device_id == device_id)
-            })
-            .unwrap_or_default();
-        devices.rotate_left(focused_device_index);
+        let device_count = self.selected_devices_for_group.len();
+        if device_count == 0 {
+            return None;
+        }
 
-        for (index, device) in devices.iter().enumerate() {
+        let focused_index = self
+            .selected_devices_for_group
+            .iter()
+            .position(|d| self.focused_device.is_some_and(|id| d.device_id == id))
+            .unwrap_or_default();
+
+        for offset in 0..device_count {
+            let device_index = (focused_index + offset) % device_count;
+            let device = self.selected_devices_for_group.get(device_index)?;
+
             if let Some(setting) = self
                 .device_settings(&device.device_id, state)
                 .iter()
-                .find(|setting| setting.is_required() && !device.is_set(setting))
+                .find(|s| s.is_required() && !device.is_set(s))
             {
-                let device_index = (focused_device_index + index) % devices.len();
-
-                // Required setting is on the page currently in focus
-                if device_index == focused_device_index {
-                    return Some(format!("missing required setting '{}'", setting.label()));
-                }
-
-                return Some(format!(
-                    "missing required setting '{}' for device {}",
-                    setting.label(),
-                    device_index + 1
-                ));
+                let reason = if device_index == focused_index {
+                    format!("missing required setting '{}'", setting.label())
+                } else {
+                    format!(
+                        "missing required setting '{}' for device {}",
+                        setting.label(),
+                        device_index + 1
+                    )
+                };
+                return Some(reason);
             }
         }
 
@@ -614,30 +590,68 @@ impl NewProfileDialog {
     fn build_profile(&self) -> anyhow::Result<Profile> {
         let profile = match self.selected_profile_type {
             ProfileType::NormalGroup => {
-                let (mut master, slaves): (Vec<_>, Vec<_>) = self
+                let mut devices: Vec<_> = self
                     .selected_devices_for_group
                     .iter()
-                    .map(|d| d.to_group_profile_device())
-                    .enumerate()
-                    .partition_map(|(index, d)| {
-                        if index == 0 {
-                            Either::Left(d)
-                        } else {
-                            Either::Right(d)
-                        }
-                    });
+                    .map(|d| GroupProfileDevice {
+                        device_id: d.device_id,
+                        volume_level: d.volume_level,
+                        led_brightness: d.led_brightness,
+                        node_name: d.node_name.clone(),
+                        audio_preset: d.audio_preset,
+                        treble_eq: d.treble_eq,
+                        bass_eq: d.bass_eq,
+                        center_trim: d.center_trim,
+                    })
+                    .collect();
 
-                anyhow::ensure!(master.len() == 1, "no master");
-                anyhow::ensure!(!slaves.is_empty(), "no slaves");
+                anyhow::ensure!(!devices.is_empty(), "no devices");
 
                 Profile::Group(GroupProfile {
-                    master: master.remove(0),
-                    slaves,
+                    master: devices.remove(0),
+                    slaves: devices,
+                    // TODO
                     source: None,
                     ungroup_extra: None,
                 })
             }
             ProfileType::MultiplayerGroup => {
+                let master = self
+                    .selected_devices_for_group
+                    .first()
+                    .context("no master")?;
+                let slaves = self
+                    .selected_devices_for_group
+                    .iter()
+                    .skip(1)
+                    .map(|d| {
+                        anyhow::Ok(MultiplayerGroupProfileSlave {
+                            device_id: d.device_id,
+                            led_brightness: d.led_brightness,
+                            node_name: d.node_name.clone().context("missing node name")?,
+                            volume_trim: d.volume_trim,
+                        })
+                    })
+                    .try_collect()?;
+
+                Profile::MultiplayerGroup(MultiplayerGroupProfile {
+                    slaves,
+                    master: master.device_id,
+                    volume_level: master.volume_level,
+                    node_name: master.node_name.clone(),
+                    audio_preset: master.audio_preset,
+                    treble_eq: master.treble_eq,
+                    bass_eq: master.bass_eq,
+                    center_trim: master.center_trim,
+                    surround_upmixer: master.surround_upmixer,
+                    led_brightness: master.led_brightness,
+                    // TODO
+                    group_name: None,
+                    source: None,
+                    ungroup_extra: None,
+                })
+            }
+            _ => {
                 todo!();
                 // let mut devices = self.selected_devices_for_group.iter().enumerate();
                 // let (master_index, master) = devices.next()?;
@@ -897,10 +911,9 @@ impl NewProfileDialog {
         let device = self.selected_devices_for_group.get(device_index);
         let device_name = device
             .and_then(|d| ctx.state.find_device(&d.device_id))
-            .map_or_else(
-                || String::new(),
-                |s| s.device_name().unwrap_or_else(|| s.device.id.to_string()),
-            );
+            .map_or_else(String::new, |s| {
+                s.device_name().unwrap_or_else(|| s.device.id.to_string())
+            });
         let header = Line::from(vec![
             format!("device {} of {device_count}: ", device_index + 1)
                 .fg(ctx.stylesheet.text_color_sub),
@@ -911,11 +924,10 @@ impl NewProfileDialog {
         let list = self
             .focused_device
             .iter()
-            .map(|device_id| self.device_settings(&device_id, ctx.state))
-            .flatten()
+            .flat_map(|device_id| self.device_settings(device_id, ctx.state))
             .map(|setting| {
                 let value = device
-                    .map(|d| d.value_text(&setting, &ctx.stylesheet))
+                    .map(|d| d.value_text(&setting, ctx.stylesheet))
                     .unwrap_or_else(|| "N/A".fg(ctx.stylesheet.text_color));
                 Line::from(vec![
                     format!("{:<20}", setting.label()).fg(ctx.stylesheet.text_color_sub),
@@ -1089,34 +1101,38 @@ impl DialogComponent for NewProfileDialog {
                         .iter()
                         .position(|d| d.device_id == device_id)
                     {
-                        if index == 0 {
+                        if self.device_role(&device_id) == DeviceRole::Master {
                             self.selected_devices_for_group.clear();
                         } else {
                             self.selected_devices_for_group.remove(index);
                         }
-                    } else if self.selected_profile_type.is_zone_group() {
-                        // For zone groups the first selected device becomes the master, the rest become slaves
-                        let (is_master_capable, is_slave_capable) = state
-                            .find_device(&device_id)
-                            .and_then(|d| d.group_status.as_ref())
-                            .and_then(|s| s.zone_options.as_ref())
-                            .map(|o| (o.is_master_capable(), o.is_slave_capable()))
-                            .unwrap_or_default();
+                    } else if self.selected_devices_for_group.len()
+                        < self.selected_profile_type.max_num_devices()
+                    {
+                        if self.selected_profile_type.is_zone_group() {
+                            // For zone groups the first selected device becomes the master, the rest become slaves
+                            let (is_master_capable, is_slave_capable) = state
+                                .find_device(&device_id)
+                                .and_then(|d| d.group_status.as_ref())
+                                .and_then(|s| s.zone_options.as_ref())
+                                .map(|o| (o.is_master_capable(), o.is_slave_capable()))
+                                .unwrap_or_default();
 
-                        if self.selected_devices_for_group.is_empty() {
-                            // First device must be master capable
-                            if is_master_capable {
+                            if self.selected_devices_for_group.is_empty() {
+                                // First device must be master capable
+                                if is_master_capable {
+                                    self.selected_devices_for_group
+                                        .push(DeviceSettings::new(device_id));
+                                }
+                            } else if is_slave_capable {
+                                // Other devices must be slave capable
                                 self.selected_devices_for_group
                                     .push(DeviceSettings::new(device_id));
                             }
-                        } else if is_slave_capable {
-                            // Other devices must be slave capable
+                        } else {
                             self.selected_devices_for_group
                                 .push(DeviceSettings::new(device_id));
                         }
-                    } else {
-                        self.selected_devices_for_group
-                            .push(DeviceSettings::new(device_id));
                     }
                 }
                 None
@@ -1134,7 +1150,7 @@ impl DialogComponent for NewProfileDialog {
                 if let Some(text_input) = self
                     .inline_text_input
                     .as_ref()
-                    .map(|i| i.value().to_owned()) =>
+                    .map(|i| i.value().trim().to_owned()) =>
             {
                 if let Some((setting, device)) = self.focused_device.and_then(|device_id| {
                     Some((
@@ -1145,18 +1161,14 @@ impl DialogComponent for NewProfileDialog {
                             .iter_mut()
                             .find(|d| d.device_id == device_id)?,
                     ))
-                }) {
-                    match setting.kind() {
-                        DeviceSettingKind::NodeName => {
-                            device.node_name = if text_input.is_empty() {
-                                None
-                            } else {
-                                Some(text_input)
-                            }
+                })
+                    && setting.kind() == DeviceSettingKind::NodeName {
+                        device.node_name = if text_input.is_empty() {
+                            None
+                        } else {
+                            Some(text_input)
                         }
-                        _ => {}
                     }
-                }
                 self.inline_text_input = None;
                 None
             }
