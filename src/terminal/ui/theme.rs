@@ -6,6 +6,7 @@ pub const MASTER_SYMBOL: char = '★';
 pub const SLAVE_SYMBOL: char = '●';
 pub const ZONE_SLAVE_SYMBOL: char = '¶';
 pub const WARNING_SYMBOL: &str = "⚠️";
+pub const DOT_DIVIDER: &str = "•";
 
 #[derive(Debug, Clone, Copy)]
 pub struct Stylesheet {

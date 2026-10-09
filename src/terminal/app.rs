@@ -10,7 +10,8 @@ use tracing_subscriber::prelude::*;
 use super::ui::{Ui, UserAction};
 use crate::bluos::{
     DeviceAudioSettings, DeviceController, DeviceDiagnostics, DeviceGroupStatus,
-    DeviceInputSelection, DevicePlayerSettings, DeviceStatus, DeviceVolume, ProfileController,
+    DeviceInputSelection, DevicePlayerSettings, DevicePresets, DeviceStatus, DeviceVolume,
+    ProfileController,
 };
 use crate::discover::{Device, DeviceDiscovery};
 use crate::editor::open_external_editor;
@@ -55,6 +56,7 @@ pub struct DeviceState {
     pub input_selection: Option<DeviceInputSelection>,
     pub audio_settings: Option<DeviceAudioSettings>,
     pub player_settings: Option<DevicePlayerSettings>,
+    pub presets: Option<DevicePresets>,
 }
 
 impl DeviceState {
@@ -97,6 +99,7 @@ impl From<Device> for DeviceState {
             input_selection: None,
             audio_settings: None,
             player_settings: None,
+            presets: None,
         }
     }
 }
@@ -272,16 +275,19 @@ impl App {
                 input_selection,
                 audio_settings,
                 player_settings,
+                presets,
             ) => {
                 if let Some(state) = self.state.device_state.get_mut(&id) {
                     debug_diff!(~ state.diagnostics, diagnostics, "device diagnostics polled");
                     debug_diff!(~ state.input_selection, input_selection, "device input selection polled");
                     debug_diff!(~ state.audio_settings, audio_settings, "device audio settings polled");
                     debug_diff!(~ state.player_settings, player_settings, "device player settings polled");
+                    debug_diff!(~ state.presets, presets, "device presets polled");
                     state.diagnostics = Some(diagnostics);
                     state.input_selection = Some(input_selection);
                     state.audio_settings = Some(audio_settings);
                     state.player_settings = Some(player_settings);
+                    state.presets = Some(presets);
                 }
             }
             Event::ProfilesLoaded(profiles) => {

@@ -1,3 +1,4 @@
+#![allow(unused)]
 use ratatui::style::Color;
 use uuid::Uuid;
 
@@ -19,12 +20,31 @@ where
         }
     })
 }
+/// Advances to the value after `current`, returning `None` after the last value. If `current`
+/// is `None` the first value is selected.
+pub fn select_next_or_none<T, I, F, R>(iter: I, map: F, current: Option<R>) -> Option<R>
+where
+    I: IntoIterator<Item = T> + Clone,
+    F: FnMut(T) -> R + Clone,
+    R: PartialEq + Eq,
+{
+    if current.is_none() {
+        return select_first(iter, map);
+    }
 
+    first_after(
+        iter.clone().into_iter().map(map.clone()),
+        |p| matches!(&current, Some(x) if x == p),
+    )
+}
+
+/// Advances to the value after `current`, wrapping to the first value after the last. If `current`
+/// is `None` the first value is selected.
 pub fn select_next<T, I, F, R>(iter: I, map: F, current: Option<R>) -> Option<R>
 where
     I: IntoIterator<Item = T> + Clone,
     F: FnMut(T) -> R + Clone,
-    R: PartialEq + Eq + Clone,
+    R: PartialEq + Eq,
 {
     first_after(
         iter.clone().into_iter().map(map.clone()),
@@ -33,11 +53,32 @@ where
     .or_else(|| select_first(iter, map))
 }
 
+/// Moves back to the value before `current`, returning `None` after the first value. If `current`
+/// is `None` the last value is selected.
+pub fn select_previous_or_none<T, I, F, R>(iter: I, map: F, current: Option<R>) -> Option<R>
+where
+    I: IntoIterator<Item = T> + Clone,
+    F: FnMut(T) -> R + Clone,
+    R: PartialEq + Eq,
+    <I as IntoIterator>::IntoIter: DoubleEndedIterator,
+{
+    if current.is_none() {
+        return select_last(iter, map);
+    }
+
+    first_after(
+        iter.clone().into_iter().rev().map(map.clone()),
+        |p| matches!(&current, Some(x) if x == p),
+    )
+}
+
+/// Moves back to the value before `current`, wrapping to the last value after the first. If `current`
+/// is `None` the last value is selected.
 pub fn select_previous<T, I, F, R>(iter: I, map: F, current: Option<R>) -> Option<R>
 where
     I: IntoIterator<Item = T> + Clone,
     F: FnMut(T) -> R + Clone,
-    R: PartialEq + Eq + Clone,
+    R: PartialEq + Eq,
     <I as IntoIterator>::IntoIter: DoubleEndedIterator,
 {
     first_after(
@@ -62,6 +103,21 @@ where
     <I as IntoIterator>::IntoIter: DoubleEndedIterator,
 {
     iter.into_iter().rev().map(map).next()
+}
+
+pub fn cycle_or_none<T, I>(current: &Option<T>, values: I) -> Option<T>
+where
+    T: PartialEq,
+    I: IntoIterator<Item = T>,
+{
+    let mut iter = values.into_iter();
+    match current {
+        None => iter.next(),
+        Some(current) => {
+            iter.find(|value| value == current);
+            iter.next()
+        }
+    }
 }
 
 pub fn uuid_to_color<UUID: Into<Uuid>>(uuid: UUID) -> Color {

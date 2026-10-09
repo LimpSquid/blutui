@@ -4,7 +4,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, de};
 use strum_macros::{Display, EnumIter, EnumString};
 
-use crate::serde::number::StrU16;
+use crate::serde::number::{StrU16, StrUsize};
 use crate::types::GroupId;
 
 fn deserialize_device_id<'de, D>(deserializer: D) -> Result<(IpAddr, u16), D::Error>
@@ -259,6 +259,14 @@ pub struct DeviceDiagnostics {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceInputSelectionItem {
+    #[serde(rename = "@text")]
+    pub text: String,
+    #[serde(rename = "@URL")]
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInputSelection {
     #[serde(default)]
     pub item: Vec<DeviceInputSelectionItem>,
@@ -280,11 +288,17 @@ impl DeviceInputSelection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeviceInputSelectionItem {
-    #[serde(rename = "@text")]
-    pub text: String,
-    #[serde(rename = "@URL")]
-    pub url: String,
+pub struct DevicePreset {
+    #[serde(rename = "@id")]
+    pub id: StrUsize,
+    #[serde(rename = "@name")]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DevicePresets {
+    #[serde(default)]
+    pub preset: Vec<DevicePreset>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

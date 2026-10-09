@@ -30,76 +30,74 @@ enum Action {
 
 #[tracing::instrument(skip(client))]
 async fn handle_action(device_id: DeviceId, client: &HttpClient, action: Action) -> Vec<Event> {
-    let result: anyhow::Result<Vec<Event>> = async {
-        let events = match action {
-            Action::VolumeStep(step, tell_slaves) => {
-                client.volume_step(step, tell_slaves).await?;
-                vec![]
-            }
-            Action::Play => {
-                client.play(None).await?;
-                vec![]
-            }
-            Action::Pause => {
-                client.pause().await?;
-                vec![]
-            }
-            Action::Stop => {
-                client.stop().await?;
-                vec![]
-            }
-            Action::Skip => {
-                client.skip().await?;
-                vec![]
-            }
-            Action::Back => {
-                client.back().await?;
-                vec![]
-            }
-            Action::Mute(on) => {
-                client.mute(on).await?;
-                vec![]
-            }
-            Action::Poll => {
-                let (
-                    diagnostics,
-                    input_selection,
-                    audio_settings,
-                    player_settings
-                ) = tokio::try_join!(
-                    client.get_diagnostics(),
-                    client.get_input_selection(),
-                    client.get_audio_settings(),
-                    client.get_player_settings(),
-                )?;
-                vec![Event::DevicePolled(
-                    device_id,
-                    diagnostics,
-                    input_selection,
-                    audio_settings,
-                    player_settings,
-                )]
-            }
-            Action::Ungroup => {
-                let group_status = client.get_group_status(None).await?;
-                if group_status.am_i_master() {
-                    let endpoints_to_remove = group_status.slave
-                        .iter()
-                        .map(|s| (s.ip_addr, *s.port))
-                        .chain(group_status.zone_slave.iter().map(|s| (s.ip_addr, *s.port)))
-                        .collect::<Vec<_>>();
-
-                    client
-                        .remove_slaves(&endpoints_to_remove)
-                        .await?;
+    let result: anyhow::Result<Vec<Event>> =
+        async {
+            let events = match action {
+                Action::VolumeStep(step, tell_slaves) => {
+                    client.volume_step(step, tell_slaves).await?;
+                    vec![]
                 }
-                vec![]
-            }
-        };
+                Action::Play => {
+                    client.play(None).await?;
+                    vec![]
+                }
+                Action::Pause => {
+                    client.pause().await?;
+                    vec![]
+                }
+                Action::Stop => {
+                    client.stop().await?;
+                    vec![]
+                }
+                Action::Skip => {
+                    client.skip().await?;
+                    vec![]
+                }
+                Action::Back => {
+                    client.back().await?;
+                    vec![]
+                }
+                Action::Mute(on) => {
+                    client.mute(on).await?;
+                    vec![]
+                }
+                Action::Poll => {
+                    let (diagnostics, input_selection, audio_settings, player_settings, presets) =
+                        tokio::try_join!(
+                            client.get_diagnostics(),
+                            client.get_input_selection(),
+                            client.get_audio_settings(),
+                            client.get_player_settings(),
+                            client.get_presets(),
+                        )?;
+                    vec![Event::DevicePolled(
+                        device_id,
+                        diagnostics,
+                        input_selection,
+                        audio_settings,
+                        player_settings,
+                        presets,
+                    )]
+                }
+                Action::Ungroup => {
+                    let group_status = client.get_group_status(None).await?;
+                    if group_status.am_i_master() {
+                        let endpoints_to_remove = group_status
+                            .slave
+                            .iter()
+                            .map(|s| (s.ip_addr, *s.port))
+                            .chain(group_status.zone_slave.iter().map(|s| (s.ip_addr, *s.port)))
+                            .collect::<Vec<_>>();
 
-        Ok(events)
-    }
-    .await;
+                        client.remove_slaves(&endpoints_to_remove).await?;
+                    }
+                    vec![]
+                }
+            };
+
+            Ok(events)
+        }
+        .await;
 
     match result {
         Ok(events) => events,

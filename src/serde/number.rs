@@ -101,7 +101,9 @@ impl_str_number! { StrU8,   u8 }
 impl_str_number! { StrU16, u16 }
 impl_str_number! { StrU32, u32 }
 impl_str_number! { StrU64, u64 }
+impl_str_number! { StrUsize, usize }
 impl_str_number! { StrI8,   i8 }
 impl_str_number! { StrI16, i16 }
 impl_str_number! { StrI32, i32 }
 impl_str_number! { StrI64, i64 }
+impl_str_number! { StrIsize, isize }

@@ -239,6 +239,21 @@ impl HttpClient {
         Ok(player_settings)
     }
 
+    pub async fn get_presets(&self) -> anyhow::Result<DevicePresets> {
+        let response = self
+            .client
+            .get(self.api_path("Presets")?)
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        let presets = quick_xml::de::from_str(&response)?;
+
+        Ok(presets)
+    }
+
     pub async fn set_audio_preset(&self, preset: AudioPreset) -> anyhow::Result<()> {
         anyhow::ensure!(
             preset != AudioPreset::Unknown,

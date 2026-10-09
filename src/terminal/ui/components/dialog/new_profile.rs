@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 use super::prelude::*;
 use crate::bluos::profile::{
     GroupProfile, GroupProfileDevice, MultiplayerGroupProfile, MultiplayerGroupProfileSlave,
-    Profile,
+    Profile, SourceSelection,
 };
 use crate::bluos::{AudioPreset, LedBrightness, SettingState};
 use crate::profile::validate_profile_name;
@@ -14,21 +14,6 @@ use crate::types::DeviceId;
 
 const DB_STEP_RESOLUTION: f64 = 0.5;
 const VOLUME_LEVEL_RESOLUTION: f64 = 1.0;
-
-fn cycle_or_unset<T, I>(current: Option<T>, values: I) -> Option<T>
-where
-    T: PartialEq + Copy,
-    I: IntoIterator<Item = T>,
-{
-    let mut iter = values.into_iter();
-    match current {
-        None => iter.next(),
-        Some(current) => {
-            iter.find(|value| *value == current);
-            iter.next()
-        }
-    }
-}
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum_macros::EnumIter)]
 enum ProfileType {
@@ -97,6 +82,7 @@ enum WizardStep {
     ChooseProfileType,
     SelectDevices,
     EditDeviceSettings,
+    SelectSourceInput,
     ChooseProfileName,
 }
 
@@ -106,8 +92,24 @@ impl WizardStep {
             Self::ChooseProfileType => "choose a profile type",
             Self::SelectDevices => "select devices",
             Self::EditDeviceSettings => "edit device settings",
+            Self::SelectSourceInput => "select source input",
             Self::ChooseProfileName => "choose a profile name",
         }
+    }
+}
+
+#[derive(Debug, Clone, strum_macros::EnumIter)]
+enum SourceSelectionState {
+    Input(Option<String>),
+    Preset(Option<usize>),
+}
+
+impl PartialEq for SourceSelectionState {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Input(_), Self::Input(_)) | (Self::Preset(_), Self::Preset(_))
+        )
     }
 }
 
@@ -212,22 +214,22 @@ impl DeviceSettings {
                 self.volume_level = self.volume_level.map(|_| None).unwrap_or(Some(0));
             }
             DeviceSettingKind::LedBrightness => {
-                self.led_brightness = cycle_or_unset(self.led_brightness, LedBrightness::iter())
+                self.led_brightness = cycle_or_none(&self.led_brightness, LedBrightness::iter())
             }
             DeviceSettingKind::AudioPreset => {
-                self.audio_preset = cycle_or_unset(self.audio_preset, AudioPreset::iter())
+                self.audio_preset = cycle_or_none(&self.audio_preset, AudioPreset::iter())
             }
             DeviceSettingKind::VolumeTrim => {
                 self.volume_trim = self.volume_trim.map(|_| None).unwrap_or_default()
             }
             DeviceSettingKind::SurroundUpmixer => {
-                self.surround_upmixer = cycle_or_unset(self.surround_upmixer, SettingState::iter());
+                self.surround_upmixer = cycle_or_none(&self.surround_upmixer, SettingState::iter());
             }
             DeviceSettingKind::VolumeLeveler => {
-                self.volume_leveler = cycle_or_unset(self.volume_leveler, SettingState::iter());
+                self.volume_leveler = cycle_or_none(&self.volume_leveler, SettingState::iter());
             }
             DeviceSettingKind::Virtualizer => {
-                self.virtualizer = cycle_or_unset(self.virtualizer, SettingState::iter());
+                self.virtualizer = cycle_or_none(&self.virtualizer, SettingState::iter());
             }
             DeviceSettingKind::TrebleEq => {
                 self.treble_eq = self.treble_eq.map(|_| None).unwrap_or(Some(0.0));
@@ -405,8 +407,9 @@ pub struct NewProfileDialog {
     selected_devices_for_group: Vec<DeviceSettings>,
     profile_name_input: TextFieldState,
     focused_device: Option<DeviceId>,
-    focused_settings_row: usize,
+    focused_row: usize,
     inline_text_input: Option<TextFieldState>,
+    source_selection_input: Option<SourceSelectionState>,
 }
 
 impl NewProfileDialog {
@@ -482,7 +485,7 @@ impl NewProfileDialog {
         };
         let Some(setting) = self
             .device_settings(&device_id, state)
-            .get(self.focused_settings_row)
+            .get(self.focused_row)
             .copied()
         else {
             return;
@@ -498,7 +501,7 @@ impl NewProfileDialog {
         device.adjust(&setting, step);
     }
 
-    fn selection_block_reason(&self, state: &AppState) -> Option<String> {
+    fn device_selection_block_reason(&self, state: &AppState) -> Option<String> {
         if self.selected_profile_type.is_group() {
             if self.selected_devices_for_group.is_empty() {
                 return Some("select a single master device".to_owned());
@@ -549,7 +552,7 @@ impl NewProfileDialog {
         None
     }
 
-    fn edit_block_reason(&self, state: &AppState) -> Option<String> {
+    fn edit_settings_block_reason(&self, state: &AppState) -> Option<String> {
         let device_count = self.selected_devices_for_group.len();
         if device_count == 0 {
             return None;
@@ -586,7 +589,28 @@ impl NewProfileDialog {
         None
     }
 
+    fn source_selection_block_reason(&self) -> Option<String> {
+        match self.source_selection_input.as_ref()? {
+            SourceSelectionState::Input(None) => Some("select an input source".to_owned()),
+            SourceSelectionState::Input(Some(s)) if s.trim().is_empty() => {
+                Some("type an input source name".to_owned())
+            }
+            SourceSelectionState::Preset(None) => Some("select a preset".to_owned()),
+            SourceSelectionState::Preset(Some(preset_id)) if *preset_id == 0 => {
+                Some("preset id must be greater than 0".to_owned())
+            }
+            _ => None,
+        }
+    }
+
     fn build_profile(&self) -> anyhow::Result<Profile> {
+        let source = self.source_selection_input.clone().and_then(|i| match i {
+            SourceSelectionState::Input(Some(input)) => Some(SourceSelection::Input { input }),
+            SourceSelectionState::Preset(Some(preset_id)) => {
+                Some(SourceSelection::Preset { preset_id })
+            }
+            _ => None,
+        });
         let profile = match self.selected_profile_type {
             ProfileType::NormalGroup => {
                 let mut devices: Vec<_> = self
@@ -610,10 +634,9 @@ impl NewProfileDialog {
                 anyhow::ensure!(!devices.is_empty(), "no devices");
 
                 Profile::Group(GroupProfile {
+                    source,
                     master: devices.remove(0),
                     slaves: devices,
-                    // TODO
-                    source: None,
                     ungroup_extra: None,
                 })
             }
@@ -638,6 +661,7 @@ impl NewProfileDialog {
 
                 Profile::MultiplayerGroup(MultiplayerGroupProfile {
                     slaves,
+                    source,
                     master: master.device_id,
                     volume_level: master.volume_level,
                     node_name: master.node_name.clone(),
@@ -651,53 +675,11 @@ impl NewProfileDialog {
                     led_brightness: master.led_brightness,
                     // TODO
                     group_name: None,
-                    source: None,
                     ungroup_extra: None,
                 })
             }
             _ => {
                 todo!();
-                // let mut devices = self.selected_devices_for_group.iter().enumerate();
-                // let (master_index, master) = devices.next()?;
-                // let master_settings = settings.get(master_index)?;
-                // let slaves = devices
-                //     .filter_map(|(index, id)| {
-                //         let s = settings.get(index)?;
-                //         let node_name = s.node_name.as_deref()?.trim();
-                //         if node_name.is_empty() {
-                //             return None;
-                //         }
-                //         Some(MultiplayerGroupProfileSlave {
-                //             device_id: *id,
-                //             node_name: node_name.to_string(),
-                //             volume_trim: s.volume_trim,
-                //             led_brightness: s.led_brightness,
-                //         })
-                //     })
-                //     .collect::<Vec<_>>();
-                // if slaves.is_empty() {
-                //     return None;
-                // }
-
-                // Some(Profile::MultiplayerGroup(MultiplayerGroupProfile {
-                //     master: *master,
-                //     volume_level: master_settings.volume_level,
-                //     node_name: master_settings
-                //         .node_name
-                //         .as_deref()
-                //         .filter(|n| !n.trim().is_empty())
-                //         .map(str::to_owned),
-                //     audio_preset: master_settings.audio_preset,
-                //     treble_eq: master_settings.treble_eq,
-                //     bass_eq: master_settings.bass_eq,
-                //     center_trim: master_settings.center_trim,
-                //     surround_upmixer: master_settings.surround_upmixer,
-                //     led_brightness: master_settings.led_brightness,
-                //     source: None,
-                //     group_name: None,
-                //     slaves,
-                //     ungroup_extra: None,
-                // }))
             }
         };
 
@@ -850,36 +832,34 @@ impl NewProfileDialog {
                 &mut ListState::default().with_selected(selected),
             );
 
-            let (hint, keybindings) = if let Some(reason) = self.selection_block_reason(ctx.state) {
-                (
-                    Line::from(reason)
-                        .fg(ctx.stylesheet.error_color)
-                        .bold()
-                        .alignment(Alignment::Center),
-                    Keybindings::new(&[
-                        ("🡳/🡱", "Selection"),
-                        ("SPACE", "Select device"),
-                        ("u", "Ungroup all devices"),
-                        ("ESC", "Close"),
-                    ]),
-                )
+            if let Some(reason) = self.device_selection_block_reason(ctx.state) {
+                Line::from(reason)
+                    .fg(ctx.stylesheet.error_color)
+                    .bold()
+                    .alignment(Alignment::Center)
+                    .render(hint_area, ctx.buffer);
+                Keybindings::new(&[
+                    ("🡳/🡱", "Selection"),
+                    ("SPACE", "Select device"),
+                    ("u", "Ungroup all devices"),
+                    ("ESC", "Close"),
+                ])
+                .render(footer, ctx);
             } else {
-                (
-                    Line::from("selection OK")
-                        .fg(ctx.stylesheet.success_color)
-                        .bold()
-                        .alignment(Alignment::Center),
-                    Keybindings::new(&[
-                        ("🡳/🡱", "Selection"),
-                        ("SPACE", "Select device"),
-                        ("u", "Ungroup all devices"),
-                        ("ESC", "Close"),
-                        ("ENTER", "Next"),
-                    ]),
-                )
+                Line::from("selection OK")
+                    .fg(ctx.stylesheet.success_color)
+                    .bold()
+                    .alignment(Alignment::Center)
+                    .render(hint_area, ctx.buffer);
+                Keybindings::new(&[
+                    ("🡳/🡱", "Selection"),
+                    ("SPACE", "Select device"),
+                    ("u", "Ungroup all devices"),
+                    ("ESC", "Close"),
+                    ("ENTER", "Next"),
+                ])
+                .render(footer, ctx);
             };
-            hint.render(hint_area, ctx.buffer);
-            keybindings.render(footer, ctx);
         }
     }
 
@@ -945,7 +925,7 @@ impl NewProfileDialog {
             list,
             list_area,
             ctx.buffer,
-            &mut ListState::default().with_selected(Some(self.focused_settings_row)),
+            &mut ListState::default().with_selected(Some(self.focused_row)),
         );
 
         if let Some(mut text_input) = self.inline_text_input.clone() {
@@ -963,38 +943,186 @@ impl NewProfileDialog {
             return;
         }
 
-        let (hint, keybindings) = if let Some(reason) = self.edit_block_reason(ctx.state) {
-            (
-                Line::from(reason)
-                    .fg(ctx.stylesheet.error_color)
-                    .bold()
-                    .alignment(Alignment::Center),
-                Keybindings::new(&[
-                    ("🡳/🡱", "Setting"),
-                    ("🡰/🡲", "Adjust"),
-                    ("SPACE", "Toggle / Edit"),
-                    ("TAB", "Change Device"),
-                    ("ESC", "Close"),
-                ]),
-            )
+        if let Some(reason) = self.edit_settings_block_reason(ctx.state) {
+            Line::from(reason)
+                .fg(ctx.stylesheet.error_color)
+                .bold()
+                .alignment(Alignment::Center)
+                .render(input_or_hint_area, ctx.buffer);
+            Keybindings::new(&[
+                ("🡳/🡱", "Setting"),
+                ("🡰/🡲", "Adjust"),
+                ("SPACE", "Toggle / Edit"),
+                ("TAB", "Change Device"),
+                ("ESC", "Close"),
+            ])
+            .render(footer, ctx);
         } else {
-            (
-                Line::from("settings OK")
-                    .fg(ctx.stylesheet.success_color)
-                    .bold()
-                    .alignment(Alignment::Center),
-                Keybindings::new(&[
-                    ("🡳/🡱", "Setting"),
-                    ("🡰/🡲", "Adjust"),
-                    ("SPACE", "Toggle / Edit"),
-                    ("TAB", "Device"),
-                    ("ENTER", "Next"),
-                    ("ESC", "Close"),
-                ]),
-            )
+            Line::from("settings OK")
+                .fg(ctx.stylesheet.success_color)
+                .bold()
+                .alignment(Alignment::Center)
+                .render(input_or_hint_area, ctx.buffer);
+            Keybindings::new(&[
+                ("🡳/🡱", "Setting"),
+                ("🡰/🡲", "Adjust"),
+                ("SPACE", "Toggle / Edit"),
+                ("TAB", "Device"),
+                ("ENTER", "Next"),
+                ("ESC", "Close"),
+            ])
+            .render(footer, ctx);
         };
-        hint.render(input_or_hint_area, ctx.buffer);
-        keybindings.render(footer, ctx);
+    }
+
+    fn render_select_source_input(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
+        const TABS_LABEL: &str = "Choose the input source:";
+
+        let [body, footer] = area.layout(
+            &Layout::new(
+                Direction::Vertical,
+                [Constraint::Fill(1), Constraint::Length(1)],
+            )
+            .margin(1),
+        );
+        let [header_area, list_area, input_or_hint_area] = body.layout(
+            &Layout::new(
+                Direction::Vertical,
+                [
+                    Constraint::Length(1),
+                    Constraint::Fill(1),
+                    Constraint::Length(3),
+                ],
+            )
+            .spacing(1)
+            .margin(1),
+        );
+        let [tabs_label_area, tabs_area] = header_area.layout(
+            &Layout::new(
+                Direction::Horizontal,
+                [
+                    Constraint::Length(TABS_LABEL.len() as u16),
+                    Constraint::Fill(1),
+                ],
+            )
+            .spacing(1),
+        );
+
+        Line::from(TABS_LABEL)
+            .fg(ctx.stylesheet.text_color)
+            .bold()
+            .alignment(Alignment::Center)
+            .render(tabs_label_area, ctx.buffer);
+        Tabs::new(["Keep current", "Select input", "Load preset"])
+            .select(match self.source_selection_input {
+                None => 0,
+                Some(SourceSelectionState::Input(..)) => 1,
+                Some(SourceSelectionState::Preset(..)) => 2,
+            })
+            .style(Style::default().fg(ctx.stylesheet.text_color))
+            .divider(DOT_DIVIDER.fg(ctx.stylesheet.text_color_sub))
+            .highlight_style(Style::default().bg(ctx.stylesheet.accent_color_dark).bold())
+            .render(tabs_area, ctx.buffer);
+
+        match self.source_selection_input.as_ref() {
+            None => {
+                let text = Paragraph::new(
+                    Line::from("This profile will keep the current source selection.")
+                        .fg(ctx.stylesheet.text_color_sub)
+                        .bold()
+                        .alignment(Alignment::Center),
+                );
+                text.render(list_area, ctx.buffer);
+            }
+            Some(SourceSelectionState::Input(selection)) => {
+                let mut selected = None;
+                let list = self
+                    .selected_devices_for_group
+                    .first()
+                    .and_then(|d| ctx.state.find_device(&d.device_id))
+                    .and_then(|d| d.input_selection.as_ref())
+                    .iter()
+                    .flat_map(|i| i.item.iter())
+                    .enumerate()
+                    .map(|(index, item)| {
+                        if selection
+                            .as_ref()
+                            .is_some_and(|s| s.eq_ignore_ascii_case(&item.text))
+                        {
+                            selected = Some(index);
+                        }
+
+                        item.text.to_owned().fg(ctx.stylesheet.text_color)
+                    })
+                    .collect::<List>()
+                    .highlight_symbol("> ".fg(ctx.stylesheet.highlight_color).bold())
+                    .highlight_style(Style::new().bg(ctx.stylesheet.accent_color_dark).bold());
+                StatefulWidget::render(
+                    list,
+                    list_area,
+                    ctx.buffer,
+                    &mut ListState::default().with_selected(selected),
+                );
+
+                if let Some(reason) = self.source_selection_block_reason() {
+                    Line::from(reason)
+                        .fg(ctx.stylesheet.error_color)
+                        .bold()
+                        .alignment(Alignment::Center)
+                        .render(input_or_hint_area, ctx.buffer);
+                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ENTER", "Next"), ("ESC", "Close")])
+                        .render(footer, ctx);
+                } else {
+                    Line::from("NB: Some input sources are only available when connected or configured via the app.")
+                        .fg(ctx.stylesheet.text_color_sub)
+                        .bold()
+                        .alignment(Alignment::Center)
+                        .render(input_or_hint_area, ctx.buffer);
+                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
+                        .render(footer, ctx);
+                };
+            }
+            Some(SourceSelectionState::Preset(selection)) => {
+                let mut selected = None;
+                let list = self
+                    .selected_devices_for_group
+                    .first()
+                    .and_then(|d| ctx.state.find_device(&d.device_id))
+                    .and_then(|d| d.presets.as_ref())
+                    .iter()
+                    .flat_map(|i| i.preset.iter())
+                    .enumerate()
+                    .map(|(index, preset)| {
+                        if selection.as_ref().is_some_and(|s| *s == *preset.id) {
+                            selected = Some(index);
+                        }
+
+                        preset.name.to_owned().fg(ctx.stylesheet.text_color)
+                    })
+                    .collect::<List>()
+                    .highlight_symbol("> ".fg(ctx.stylesheet.highlight_color).bold())
+                    .highlight_style(Style::new().bg(ctx.stylesheet.accent_color_dark).bold());
+                StatefulWidget::render(
+                    list,
+                    list_area,
+                    ctx.buffer,
+                    &mut ListState::default().with_selected(selected),
+                );
+
+                if let Some(reason) = self.source_selection_block_reason() {
+                    Line::from(reason)
+                        .fg(ctx.stylesheet.error_color)
+                        .bold()
+                        .alignment(Alignment::Center)
+                        .render(input_or_hint_area, ctx.buffer);
+                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ENTER", "Next"), ("ESC", "Close")])
+                        .render(footer, ctx);
+                } else {
+                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
+                        .render(footer, ctx);
+                };
+            }
+        }
     }
 
     fn render_choose_profile_name(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
@@ -1021,25 +1149,20 @@ impl NewProfileDialog {
             .text_style(Style::new().fg(ctx.stylesheet.text_color));
         input.render(input_area, ctx.buffer, &mut self.profile_name_input.clone());
 
-        let (hint, keybindings) =
-            if let Err(error) = validate_profile_name(self.profile_name_input.value()) {
-                (
-                    Line::from(format!("{error}"))
-                        .fg(ctx.stylesheet.error_color)
-                        .bold()
-                        .alignment(Alignment::Center),
-                    Keybindings::new(&[("ESC", "Close")]),
-                )
-            } else {
-                (
-                    Line::from("profile name OK")
-                        .fg(ctx.stylesheet.success_color)
-                        .alignment(Alignment::Center),
-                    Keybindings::new(&[("ESC", "Close"), ("ENTER", "Confirm")]),
-                )
-            };
-        hint.render(hint_area, ctx.buffer);
-        keybindings.render(footer, ctx);
+        if let Err(error) = validate_profile_name(self.profile_name_input.value()) {
+            Line::from(format!("{error}"))
+                .fg(ctx.stylesheet.error_color)
+                .bold()
+                .alignment(Alignment::Center)
+                .render(hint_area, ctx.buffer);
+            Keybindings::new(&[("ESC", "Close")]).render(footer, ctx);
+        } else {
+            Line::from("profile name OK")
+                .fg(ctx.stylesheet.success_color)
+                .alignment(Alignment::Center)
+                .render(hint_area, ctx.buffer);
+            Keybindings::new(&[("ESC", "Close"), ("ENTER", "Confirm")]).render(footer, ctx);
+        };
     }
 }
 
@@ -1075,7 +1198,7 @@ impl DialogComponent for NewProfileDialog {
 
             // Select devices
             (WizardStep::SelectDevices, KeyCode::Enter) => {
-                if self.selection_block_reason(state).is_none() {
+                if self.device_selection_block_reason(state).is_none() {
                     self.focused_device =
                         self.selected_devices_for_group.first().map(|d| d.device_id);
                     self.step = WizardStep::EditDeviceSettings;
@@ -1159,19 +1282,18 @@ impl DialogComponent for NewProfileDialog {
                 if let Some((setting, device)) = self.focused_device.and_then(|device_id| {
                     Some((
                         self.device_settings(&device_id, state)
-                            .get(self.focused_settings_row)?
+                            .get(self.focused_row)?
                             .to_owned(),
                         self.selected_devices_for_group
                             .iter_mut()
                             .find(|d| d.device_id == device_id)?,
                     ))
-                }) {
-                    if setting.kind() == DeviceSettingKind::NodeName {
-                        device.node_name = if text_input.is_empty() {
-                            None
-                        } else {
-                            Some(text_input)
-                        }
+                }) && setting.kind() == DeviceSettingKind::NodeName
+                {
+                    device.node_name = if text_input.is_empty() {
+                        None
+                    } else {
+                        Some(text_input)
                     }
                 }
                 self.inline_text_input = None;
@@ -1184,8 +1306,10 @@ impl DialogComponent for NewProfileDialog {
                 None
             }
             (WizardStep::EditDeviceSettings, KeyCode::Enter) => {
-                if self.edit_block_reason(state).is_none() {
-                    self.step = WizardStep::ChooseProfileName;
+                if self.edit_settings_block_reason(state).is_none() {
+                    self.step = WizardStep::SelectSourceInput;
+                    self.focused_row = 0;
+                    self.focused_device = None;
                 }
                 None
             }
@@ -1193,7 +1317,7 @@ impl DialogComponent for NewProfileDialog {
                 if let Some((setting, device)) = self.focused_device.and_then(|device_id| {
                     Some((
                         self.device_settings(&device_id, state)
-                            .get(self.focused_settings_row)?
+                            .get(self.focused_row)?
                             .to_owned(),
                         self.selected_devices_for_group
                             .iter_mut()
@@ -1223,7 +1347,7 @@ impl DialogComponent for NewProfileDialog {
                 None
             }
             (WizardStep::EditDeviceSettings, KeyCode::Tab) => {
-                self.focused_settings_row = 0;
+                self.focused_row = 0;
                 self.focused_device = select_next(
                     self.selected_devices_for_group.iter(),
                     |d| d.device_id,
@@ -1232,11 +1356,11 @@ impl DialogComponent for NewProfileDialog {
                 None
             }
             (WizardStep::EditDeviceSettings, KeyCode::Up) => {
-                self.focused_settings_row = self.focused_settings_row.saturating_sub(1);
+                self.focused_row = self.focused_row.saturating_sub(1);
                 None
             }
             (WizardStep::EditDeviceSettings, KeyCode::Down) => {
-                self.focused_settings_row = (self.focused_settings_row + 1).min(
+                self.focused_row = (self.focused_row + 1).min(
                     self.focused_device
                         .map(|device_id| {
                             self.device_settings(&device_id, state)
@@ -1259,6 +1383,80 @@ impl DialogComponent for NewProfileDialog {
                 KeyCode::Left | KeyCode::Char('-') | KeyCode::Char('_'),
             ) => {
                 self.adjust_focused_device_setting(-1, state);
+                None
+            }
+
+            // Configure source
+            (WizardStep::SelectSourceInput, KeyCode::Tab) => {
+                self.focused_row = 0;
+                self.source_selection_input =
+                    cycle_or_none(&self.source_selection_input, SourceSelectionState::iter());
+                None
+            }
+            (WizardStep::SelectSourceInput, KeyCode::Up) => {
+                match self.source_selection_input.as_mut() {
+                    Some(SourceSelectionState::Input(selection)) => {
+                        *selection = select_previous(
+                            self.selected_devices_for_group
+                                .first()
+                                .and_then(|d| state.find_device(&d.device_id))
+                                .and_then(|d| d.input_selection.as_ref())
+                                .map(|i| i.item.clone())
+                                .unwrap_or_default(),
+                            |d| d.text.clone(),
+                            selection.to_owned(),
+                        );
+                    }
+                    Some(SourceSelectionState::Preset(selection)) => {
+                        *selection = select_previous(
+                            self.selected_devices_for_group
+                                .first()
+                                .and_then(|d| state.find_device(&d.device_id))
+                                .and_then(|d| d.presets.as_ref())
+                                .map(|i| i.preset.clone())
+                                .unwrap_or_default(),
+                            |d| *d.id,
+                            selection.to_owned(),
+                        );
+                    }
+                    _ => {}
+                }
+                None
+            }
+            (WizardStep::SelectSourceInput, KeyCode::Down) => {
+                match self.source_selection_input.as_mut() {
+                    Some(SourceSelectionState::Input(selection)) => {
+                        *selection = select_next(
+                            self.selected_devices_for_group
+                                .first()
+                                .and_then(|d| state.find_device(&d.device_id))
+                                .and_then(|d| d.input_selection.as_ref())
+                                .map(|i| i.item.clone())
+                                .unwrap_or_default(),
+                            |d| d.text.clone(),
+                            selection.to_owned(),
+                        );
+                    }
+                    Some(SourceSelectionState::Preset(selection)) => {
+                        *selection = select_next(
+                            self.selected_devices_for_group
+                                .first()
+                                .and_then(|d| state.find_device(&d.device_id))
+                                .and_then(|d| d.presets.as_ref())
+                                .map(|i| i.preset.clone())
+                                .unwrap_or_default(),
+                            |d| *d.id,
+                            selection.to_owned(),
+                        );
+                    }
+                    _ => {}
+                }
+                None
+            }
+            (WizardStep::SelectSourceInput, KeyCode::Enter) => {
+                if self.source_selection_block_reason().is_none() {
+                    self.step = WizardStep::ChooseProfileName;
+                }
                 None
             }
 
@@ -1306,6 +1504,7 @@ impl Component for NewProfileDialog {
             WizardStep::ChooseProfileType => self.render_choose_profile_type(drawable_area, ctx),
             WizardStep::SelectDevices => self.render_select_devices(drawable_area, ctx),
             WizardStep::EditDeviceSettings => self.render_edit_device_settings(drawable_area, ctx),
+            WizardStep::SelectSourceInput => self.render_select_source_input(drawable_area, ctx),
             WizardStep::ChooseProfileName => self.render_choose_profile_name(drawable_area, ctx),
         }
     }

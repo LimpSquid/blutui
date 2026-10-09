@@ -10,7 +10,7 @@ mod prelude {
     pub use ratatui::style::{Style, Stylize};
     pub use ratatui::text::{Line, Span, Text};
     pub use ratatui::widgets::{
-        Block, BorderType, List, ListState, Paragraph, StatefulWidget, Widget, Wrap,
+        Block, BorderType, List, ListState, Paragraph, StatefulWidget, Tabs, Widget, Wrap,
     };
 }
 

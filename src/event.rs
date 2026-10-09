@@ -7,7 +7,7 @@ use tokio::sync::broadcast;
 
 use crate::bluos::{
     DeviceAudioSettings, DeviceDiagnostics, DeviceGroupStatus, DeviceInputSelection,
-    DevicePlayerSettings, DeviceStatus, DeviceVolume,
+    DevicePlayerSettings, DevicePresets, DeviceStatus, DeviceVolume,
 };
 use crate::discover::Device;
 use crate::profile::StoredProfile;
@@ -28,6 +28,7 @@ pub enum Event {
         DeviceInputSelection,
         DeviceAudioSettings,
         DevicePlayerSettings,
+        DevicePresets,
     ),
     ProfileTransitionStarted,
     ProfileTransitionCompleted(Arc<anyhow::Result<()>>),
