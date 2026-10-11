@@ -14,7 +14,6 @@ use crate::bluos::{
     ProfileController,
 };
 use crate::discover::{Device, DeviceDiscovery};
-use crate::editor::open_external_editor;
 use crate::event::{Event, EventBus};
 #[cfg(feature = "ui-enable-image")]
 use crate::image_cache::{Image, ImageCache};
@@ -395,15 +394,7 @@ impl App {
                     self.profile_controller.apply_profile(profile).await?;
                 }
             }
-            UserAction::EditProfile(profile_id) => {
-                if let Some(p) = self.state.find_profile(&profile_id)
-                    && let Err(error) = open_external_editor(&p.filepath)
-                {
-                    tracing::error!(?error, "failed to open external editor");
-                    self.ui.show_notification(format!("{:?}", error));
-                }
-            }
-            UserAction::NewProfile(profile_name, profile) => {
+            UserAction::StoreProfile(profile_name, profile) => {
                 if let Err(error) = create_profile(profile_name.as_str(), &profile).await {
                     tracing::error!(?error, "failed to create profile");
                     self.ui.show_notification(format!("{:?}", error));

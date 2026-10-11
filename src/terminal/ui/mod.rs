@@ -34,8 +34,7 @@ pub enum UserAction {
     Mute(DeviceId),
     Unmute(DeviceId),
     ApplyProfile(ProfileId),
-    EditProfile(ProfileId),
-    NewProfile(String, Profile),
+    StoreProfile(String, Profile),
     DeleteProfile(StoredProfile),
     UngroupAll,
 }

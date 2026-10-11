@@ -4,8 +4,8 @@ use strum::IntoEnumIterator;
 
 use super::prelude::*;
 use crate::bluos::profile::{
-    GroupProfile, GroupProfileDevice, MultiplayerGroupProfile, MultiplayerGroupProfileSlave,
-    Profile, SourceSelection,
+    DeviceProfile, GroupProfile, GroupProfileDevice, MultiplayerGroupProfile,
+    MultiplayerGroupProfileSlave, Profile, SourceSelection,
 };
 use crate::bluos::{AudioPreset, LedBrightness, SettingState};
 use crate::profile::validate_profile_name;
@@ -399,7 +399,8 @@ impl DeviceSettingKind {
 }
 
 #[derive(Debug, Default)]
-pub struct NewProfileDialog {
+pub struct NewOrEditProfileDialog {
+    is_editing: bool,
     step: WizardStep,
     selected_profile_type: ProfileType,
     /// If the selected profile type is a (zone) group then the first
@@ -412,9 +413,114 @@ pub struct NewProfileDialog {
     source_selection_input: Option<SourceSelectionState>,
 }
 
-impl NewProfileDialog {
+impl NewOrEditProfileDialog {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn edit(profile_name: String, profile: Profile) -> Self {
+        let mut dialog = Self::new();
+        dialog.is_editing = true;
+        dialog.profile_name_input = TextFieldState::with_value(profile_name);
+        dialog.step = WizardStep::SelectDevices;
+
+        let apply_source = |dialog: &mut Self, source: Option<SourceSelection>| {
+            dialog.source_selection_input = source.map(|source| match source {
+                SourceSelection::Input { input } => SourceSelectionState::Input(Some(input)),
+                SourceSelection::Preset { preset_id } => {
+                    SourceSelectionState::Preset(Some(preset_id))
+                }
+            });
+        };
+
+        match profile {
+            Profile::Device(p) => {
+                dialog.selected_profile_type = ProfileType::SingleDevice;
+                dialog.selected_devices_for_group.push(DeviceSettings {
+                    device_id: p.device_id,
+                    volume_level: p.volume_level,
+                    led_brightness: p.led_brightness,
+                    node_name: p.node_name,
+                    audio_preset: p.audio_preset,
+                    ..DeviceSettings::new(p.device_id)
+                });
+                apply_source(&mut dialog, p.source);
+            }
+            Profile::Group(p) => {
+                dialog.selected_profile_type = ProfileType::NormalGroup;
+                dialog.selected_devices_for_group.push(DeviceSettings {
+                    device_id: p.master.device_id,
+                    volume_level: p.master.volume_level,
+                    led_brightness: p.master.led_brightness,
+                    node_name: p.master.node_name,
+                    audio_preset: p.master.audio_preset,
+                    treble_eq: p.master.treble_eq,
+                    bass_eq: p.master.bass_eq,
+                    center_trim: p.master.center_trim,
+                    surround_upmixer: p.master.surround_upmixer,
+                    volume_leveler: p.master.volume_leveler,
+                    virtualizer: p.master.virtualizer,
+                    volume_trim: None,
+                });
+                for slave in p.slaves {
+                    dialog.selected_devices_for_group.push(DeviceSettings {
+                        device_id: slave.device_id,
+                        volume_level: slave.volume_level,
+                        led_brightness: slave.led_brightness,
+                        node_name: slave.node_name,
+                        audio_preset: slave.audio_preset,
+                        treble_eq: slave.treble_eq,
+                        bass_eq: slave.bass_eq,
+                        center_trim: slave.center_trim,
+                        surround_upmixer: slave.surround_upmixer,
+                        volume_leveler: slave.volume_leveler,
+                        virtualizer: slave.virtualizer,
+                        volume_trim: None,
+                    });
+                }
+                apply_source(&mut dialog, p.source);
+            }
+            Profile::MultiplayerGroup(p) => {
+                dialog.selected_profile_type = ProfileType::MultiplayerGroup;
+                dialog.selected_devices_for_group.push(DeviceSettings {
+                    device_id: p.master,
+                    volume_level: p.volume_level,
+                    led_brightness: p.led_brightness,
+                    node_name: p.node_name,
+                    audio_preset: p.audio_preset,
+                    treble_eq: p.treble_eq,
+                    bass_eq: p.bass_eq,
+                    center_trim: p.center_trim,
+                    surround_upmixer: p.surround_upmixer,
+                    volume_leveler: p.volume_leveler,
+                    virtualizer: p.virtualizer,
+                    volume_trim: None,
+                });
+                for slave in p.slaves {
+                    dialog.selected_devices_for_group.push(DeviceSettings {
+                        device_id: slave.device_id,
+                        node_name: Some(slave.node_name),
+                        volume_trim: slave.volume_trim,
+                        led_brightness: slave.led_brightness,
+                        volume_level: None,
+                        audio_preset: None,
+                        treble_eq: None,
+                        bass_eq: None,
+                        center_trim: None,
+                        surround_upmixer: None,
+                        volume_leveler: None,
+                        virtualizer: None,
+                    });
+                }
+                apply_source(&mut dialog, p.source);
+            }
+        }
+
+        dialog.focused_device = dialog
+            .selected_devices_for_group
+            .first()
+            .map(|d| d.device_id);
+        dialog
     }
 
     fn device_role(&self, device_id: &DeviceId) -> DeviceRole {
@@ -676,6 +782,20 @@ impl NewProfileDialog {
                     // TODO
                     group_name: None,
                     ungroup_extra: None,
+                })
+            }
+            ProfileType::SingleDevice => {
+                let device = self
+                    .selected_devices_for_group
+                    .first()
+                    .context("no device")?;
+                Profile::Device(DeviceProfile {
+                    source,
+                    device_id: device.device_id,
+                    volume_level: device.volume_level,
+                    led_brightness: device.led_brightness,
+                    node_name: device.node_name.clone(),
+                    audio_preset: device.audio_preset,
                 })
             }
             _ => {
@@ -1072,6 +1192,18 @@ impl NewProfileDialog {
                         .render(input_or_hint_area, ctx.buffer);
                     Keybindings::new(&[("🡳/🡱", "Selection"), ("ENTER", "Next"), ("ESC", "Close")])
                         .render(footer, ctx);
+                } else if let Some(input) = selection.as_deref()
+                    && selected.is_none()
+                {
+                    Line::from(format!(
+                        "NB: Current input source '{input}' is not available."
+                    ))
+                    .fg(ctx.stylesheet.text_color_sub)
+                    .bold()
+                    .alignment(Alignment::Center)
+                    .render(input_or_hint_area, ctx.buffer);
+                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
+                        .render(footer, ctx);
                 } else {
                     Line::from("NB: Some input sources are only available when connected or configured via the app.")
                         .fg(ctx.stylesheet.text_color_sub)
@@ -1116,6 +1248,18 @@ impl NewProfileDialog {
                         .alignment(Alignment::Center)
                         .render(input_or_hint_area, ctx.buffer);
                     Keybindings::new(&[("🡳/🡱", "Selection"), ("ENTER", "Next"), ("ESC", "Close")])
+                        .render(footer, ctx);
+                } else if let Some(preset_id) = selection.as_ref()
+                    && selected.is_none()
+                {
+                    Line::from(format!(
+                        "NB: Current preset ({preset_id}) is not available."
+                    ))
+                    .fg(ctx.stylesheet.text_color_sub)
+                    .bold()
+                    .alignment(Alignment::Center)
+                    .render(input_or_hint_area, ctx.buffer);
+                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
                         .render(footer, ctx);
                 } else {
                     Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
@@ -1166,7 +1310,7 @@ impl NewProfileDialog {
     }
 }
 
-impl DialogComponent for NewProfileDialog {
+impl DialogComponent for NewOrEditProfileDialog {
     fn on_key_press(
         &mut self,
         code: KeyCode,
@@ -1403,7 +1547,7 @@ impl DialogComponent for NewProfileDialog {
                                 .and_then(|d| d.input_selection.as_ref())
                                 .map(|i| i.item.clone())
                                 .unwrap_or_default(),
-                            |d| d.text.clone(),
+                            |d| d.text.to_ascii_lowercase(),
                             selection.to_owned(),
                         );
                     }
@@ -1433,7 +1577,7 @@ impl DialogComponent for NewProfileDialog {
                                 .and_then(|d| d.input_selection.as_ref())
                                 .map(|i| i.item.clone())
                                 .unwrap_or_default(),
-                            |d| d.text.clone(),
+                            |d| d.text.to_ascii_lowercase(),
                             selection.to_owned(),
                         );
                     }
@@ -1464,7 +1608,7 @@ impl DialogComponent for NewProfileDialog {
             (WizardStep::ChooseProfileName, KeyCode::Enter) => {
                 if validate_profile_name(self.profile_name_input.value()).is_ok() {
                     let event = match self.build_profile() {
-                        Ok(profile) => DialogEvent::Submitted(vec![UserAction::NewProfile(
+                        Ok(profile) => DialogEvent::Submitted(vec![UserAction::StoreProfile(
                             self.profile_name_input.value().to_owned(),
                             profile,
                         )]),
@@ -1488,15 +1632,23 @@ impl DialogComponent for NewProfileDialog {
     }
 }
 
-impl Component for NewProfileDialog {
+impl Component for NewOrEditProfileDialog {
     fn render(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
-        let dialog = Popup::with_title(&format!("Create a new profile - {}", self.step.header()))
-            .constraints([Constraint::Ratio(3, 5), Constraint::Ratio(1, 2)])
-            .block(
-                Block::bordered()
-                    .border_type(BorderType::Thick)
-                    .bg(ctx.stylesheet.popup_background_color),
-            );
+        let dialog = Popup::with_title(&format!(
+            "{} - {}",
+            if self.is_editing {
+                "Edit profile"
+            } else {
+                "Create profile"
+            },
+            self.step.header()
+        ))
+        .constraints([Constraint::Ratio(3, 5), Constraint::Ratio(1, 2)])
+        .block(
+            Block::bordered()
+                .border_type(BorderType::Thick)
+                .bg(ctx.stylesheet.popup_background_color),
+        );
         let drawable_area = dialog.drawable_area(area);
         dialog.render(area, ctx.buffer);
 

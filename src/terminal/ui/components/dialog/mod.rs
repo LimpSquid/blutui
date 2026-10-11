@@ -15,11 +15,11 @@ mod prelude {
 }
 
 mod delete_profile;
-mod new_profile;
+mod new_or_edit_profile;
 mod notification;
 
 pub use delete_profile::DeleteProfileDialog;
-pub use new_profile::NewProfileDialog;
+pub use new_or_edit_profile::NewOrEditProfileDialog;
 pub use notification::NotificationDialog;
 
 #[allow(unused)]

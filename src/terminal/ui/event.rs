@@ -1,6 +1,7 @@
 use strum::EnumCount;
 
 use super::{Ui, UserAction, components::dialog::*, render::*, utils::*};
+use crate::editor::open_external_editor;
 use crate::terminal::app::{AppState, BusyFlags};
 
 #[derive(Debug, Clone, Copy)]
@@ -110,7 +111,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                 }
             }
             (Tabs, KeyCode::Char('n' | 'N')) if ui.selected_tab == Profile => {
-                ui.open_dialog(NewProfileDialog::new());
+                ui.open_dialog(NewOrEditProfileDialog::new());
             }
             (Tabs, KeyCode::Char('d' | 'D')) if ui.selected_tab == Profile => {
                 if let Some(profile) = ui
@@ -122,8 +123,23 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                 }
             }
             (Tabs, KeyCode::Char('e' | 'E')) if ui.selected_tab == Profile => {
-                if let Some(profile_id) = ui.selected_profile.clone() {
-                    ui.action(UserAction::EditProfile(profile_id));
+                if let Some(profile_id) = ui.selected_profile.clone()
+                    && let Some(profile) = state.find_profile(&profile_id)
+                {
+                    match profile.profile.to_owned() {
+                        Ok(p) => {
+                            ui.open_dialog(NewOrEditProfileDialog::edit(profile.name(), p));
+                        }
+                        // Fallback to manually editing the file for profiles
+                        Err(_) => {
+                            if let Some(p) = state.find_profile(&profile_id)
+                                && let Err(error) = open_external_editor(&p.filepath)
+                            {
+                                tracing::error!(?error, "failed to open external editor");
+                                ui.show_notification(format!("{:?}", error));
+                            }
+                        }
+                    }
                 }
             }
             (Tabs, KeyCode::Char('l' | 'L')) if ui.selected_tab == Music => {

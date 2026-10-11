@@ -23,6 +23,9 @@ pub struct DeviceProfile {
     /// NB: this settings is not available on all devices
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_preset: Option<AudioPreset>,
+    /// The source selection of this device, if `None` use the current source selection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceSelection>,
 }
 
 impl Profile for DeviceProfile {
@@ -58,6 +61,9 @@ impl Profile for DeviceProfile {
                 AudioPreset::iter().map(|v| v.to_string()).join(", ")
             );
         }
+        if let Some(source) = self.source.as_ref() {
+            source.validate()?;
+        }
 
         Ok(())
     }
@@ -66,6 +72,7 @@ impl Profile for DeviceProfile {
     async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
         let clients = clients.read().await.to_owned();
         let client = try_find_client_by_id(&clients, &self.device_id)?;
+        let facts = DeviceFacts::gather_for_all(clients.clone()).await?;
 
         if let Some(brightness) = self.led_brightness {
             client.set_led_brightness(brightness).await?;
@@ -75,6 +82,10 @@ impl Profile for DeviceProfile {
         }
         if let Some(level) = self.volume_level {
             client.set_volume_level(level, false).await?;
+        }
+        // NB: Apply input source before audio preset
+        if let Some(source) = self.source.as_ref() {
+            source.apply(&clients, &facts, &self.device_id).await?;
         }
         if let Some(audio_preset) = self.audio_preset.as_ref() {
             client.set_audio_preset(*audio_preset).await?;
