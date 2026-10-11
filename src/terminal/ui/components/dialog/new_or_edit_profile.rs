@@ -793,9 +793,15 @@ impl NewOrEditProfileDialog {
                     source,
                     device_id: device.device_id,
                     volume_level: device.volume_level,
-                    led_brightness: device.led_brightness,
                     node_name: device.node_name.clone(),
                     audio_preset: device.audio_preset,
+                    treble_eq: device.treble_eq,
+                    bass_eq: device.bass_eq,
+                    center_trim: device.center_trim,
+                    surround_upmixer: device.surround_upmixer,
+                    virtualizer: device.virtualizer,
+                    volume_leveler: device.volume_leveler,
+                    led_brightness: device.led_brightness,
                 })
             }
             _ => {
