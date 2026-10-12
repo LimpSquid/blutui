@@ -35,7 +35,7 @@ itertools = { version = "0.14" }
 netdev = { version = "0.42" }
 notify = { version = "8" }
 quick-xml = { version = "0.39", features = [ "serialize", "overlapped-lists" ] }
-ratatui = { version = "0.30", features = [ "unstable-widget-ref" ] }
+ratatui = { version = "0.30", features = [ "unstable-rendered-line-info" ] }
 ratatui-image = { version = "11", default-features = false, features = [ "crossterm", "chafa-static" ], optional = true }
 reqwest = { version = "0.13", features = [ "query", "json", "stream", "form" ] }
 scraper = { version = "0.27", features = [ "serde" ] }

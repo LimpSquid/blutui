@@ -7,6 +7,7 @@ pub const SLAVE_SYMBOL: char = '●';
 pub const ZONE_SLAVE_SYMBOL: char = '¶';
 pub const WARNING_SYMBOL: &str = "⚠️";
 pub const DOT_DIVIDER: &str = "•";
+pub const LINE_DIVIDER: &str = "|";
 
 #[derive(Debug, Clone, Copy)]
 pub struct Stylesheet {
@@ -17,6 +18,7 @@ pub struct Stylesheet {
     pub text_color: Color,
     pub text_color_sub: Color,
     pub border_color: Color,
+    pub border_color_dark: Color,
     pub error_color: Color,
     pub success_color: Color,
     pub popup_background_color: Color,
@@ -32,6 +34,7 @@ impl Default for Stylesheet {
             text_color: Color::Rgb(255, 255, 255),
             text_color_sub: Color::Rgb(150, 150, 150),
             border_color: Color::Rgb(125, 125, 125),
+            border_color_dark: Color::Rgb(62, 62, 62),
             error_color: Color::LightRed,
             success_color: Color::LightGreen,
             popup_background_color: Color::Rgb(45, 49, 66),

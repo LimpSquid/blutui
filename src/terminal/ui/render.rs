@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin, Rect, Spacing};
 use ratatui::style::{Style, Styled, Stylize};
 use ratatui::symbols::merge::MergeStrategy;
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::canvas::Canvas;
 use ratatui::widgets::{
     Bar, BarChart, Block, BorderType, Gauge, List, ListState, Paragraph, Scrollbar,
@@ -22,8 +22,12 @@ use super::{
     utils::*,
     widgets,
 };
-use crate::bluos::{DevicePlaybackState, MAX_VOLUME_LEVEL};
+use crate::bluos::profile::{Profile, SourceSelection};
+use crate::bluos::{
+    AudioPreset, DevicePlaybackState, LedBrightness, MAX_VOLUME_LEVEL, SettingState,
+};
 use crate::terminal::app::{AppState, BusyFlags, DeviceState};
+use crate::types::DeviceId;
 
 struct RenderContext<'a, 'b> {
     frame: &'a mut Frame<'b>,
@@ -283,13 +287,14 @@ fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect)
     );
 
     if ctx.state.device_state.is_empty() {
-        let text = Line::from("Detecting devices... ⏳".fg(ctx.ui.stylesheet.accent_color));
+        let paragraph =
+            Paragraph::new("Detecting devices... ⏳".fg(ctx.ui.stylesheet.accent_color))
+                .wrap(Wrap { trim: false });
         let area = area.centered(
-            Constraint::Length(text.width() as u16),
-            Constraint::Length(1),
+            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(area.width) as u16),
         );
-        ctx.frame
-            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+        ctx.frame.render_widget(paragraph, area);
     } else {
         let mut selected = None;
         let list = ctx
@@ -473,7 +478,7 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             .max()
             .unwrap_or_default() as u16;
         let spacing = 1u16;
-        let separator = ":";
+        let separator = " ";
         let loading = "Loading... ⏳";
 
         let vertical_layout = Layout::vertical(data.iter().map(|(_, v)| {
@@ -506,19 +511,19 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 
             let (key, value) = &data[i];
             ctx.frame.render_widget(
-                Paragraph::new(Line::from(key.as_str().fg(ctx.ui.stylesheet.text_color)))
+                Paragraph::new(key.as_str().fg(ctx.ui.stylesheet.text_color_sub))
                     .wrap(Wrap { trim: false }),
                 horizontal_layout[0],
             );
             ctx.frame.render_widget(
-                Line::from(separator.fg(ctx.ui.stylesheet.text_color_sub)),
+                separator.fg(ctx.ui.stylesheet.text_color_sub),
                 horizontal_layout[1],
             );
             ctx.frame.render_widget(
-                Paragraph::new(Line::from(match value {
-                    Some(value) => value.as_str().fg(ctx.ui.stylesheet.text_color_sub),
-                    None => loading.fg(ctx.ui.stylesheet.text_color_sub),
-                }))
+                Paragraph::new(match value {
+                    Some(value) => value.as_str().fg(ctx.ui.stylesheet.text_color),
+                    None => loading.fg(ctx.ui.stylesheet.text_color),
+                })
                 .wrap(Wrap { trim: false }),
                 horizontal_layout[2],
             );
@@ -532,13 +537,331 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             }
             .fg(ctx.ui.stylesheet.accent_color),
         );
+        let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
         let area = area.centered(
-            Constraint::Length(text.width() as u16),
-            Constraint::Length(1),
+            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(area.width) as u16),
         );
-        ctx.frame
-            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+        ctx.frame.render_widget(paragraph, area);
     }
+}
+
+fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
+    let selected_profile = ctx
+        .ui
+        .selected_profile
+        .as_ref()
+        .and_then(|profile_id| ctx.state.find_profile(profile_id))
+        .map(|p| p.profile.as_ref());
+    let profile_title = match selected_profile {
+        Some(Ok(Profile::Device(_))) => "single device details",
+        Some(Ok(Profile::Group(_))) => "normal group details",
+        Some(Ok(Profile::MultiplayerGroup(_))) => "multi-player group details",
+        _ => "profile details",
+    };
+    let area = render_groupbox(ctx, Some(profile_title), area, false);
+
+    if ctx
+        .state
+        .busy_flags
+        .contains(BusyFlags::PROFILE_TRANSITIONING)
+    {
+        let paragraph = Paragraph::new("Applying profile... ⏳".fg(ctx.ui.stylesheet.accent_color))
+            .wrap(Wrap { trim: false });
+        let area = area.centered(
+            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(area.width) as u16),
+        );
+        ctx.frame.render_widget(paragraph, area);
+        return;
+    }
+
+    let Some(selected_profile) = selected_profile else {
+        let paragraph = Paragraph::new("Select a profile.".fg(ctx.ui.stylesheet.accent_color))
+            .wrap(Wrap { trim: false });
+        let area = area.centered(
+            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(area.width) as u16),
+        );
+        ctx.frame.render_widget(paragraph, area);
+        return;
+    };
+    let Ok(selected_profile) = selected_profile else {
+        let text = selected_profile
+            .unwrap_err()
+            .lines()
+            .map(|l| Line::from(l.fg(ctx.ui.stylesheet.error_color)))
+            .collect::<Vec<_>>();
+        let paragraph = Paragraph::new(Text::from(text)).wrap(Wrap { trim: false });
+        let area = area.centered(
+            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(area.width) as u16),
+        );
+        ctx.frame.render_widget(paragraph, area);
+        return;
+    };
+
+    struct Row {
+        device_id: DeviceId,
+        role: Option<&'static str>,
+        settings: Vec<(&'static str, Option<String>)>,
+    }
+
+    let (main_device_id, source) = match selected_profile {
+        Profile::Device(p) => (Some(p.device_id), p.source.as_ref()),
+        Profile::Group(p) => (Some(p.master.device_id), p.source.as_ref()),
+        Profile::MultiplayerGroup(p) => (Some(p.master), p.source.as_ref()),
+    };
+
+    let device_settings = |volume_level: Option<u8>,
+                           volume_trim: Option<f64>,
+                           led_brightness: Option<LedBrightness>,
+                           node_name: Option<&str>,
+                           audio_preset: Option<AudioPreset>,
+                           treble_eq: Option<f64>,
+                           bass_eq: Option<f64>,
+                           center_trim: Option<f64>,
+                           surround_upmixer: Option<SettingState>,
+                           volume_leveler: Option<SettingState>,
+                           virtualizer: Option<SettingState>|
+     -> Vec<(&'static str, Option<String>)> {
+        let mut settings = Vec::new();
+        if let Some(v) = node_name {
+            settings.push(("device name", Some(v.to_owned())));
+        }
+        if let Some(v) = volume_level {
+            settings.push(("volume level", Some(v.to_string())));
+        }
+        if let Some(v) = volume_trim {
+            settings.push(("volume trim", Some(format!("{v:.1} dB"))));
+        }
+        if let Some(v) = led_brightness {
+            settings.push(("led brightness", Some(v.to_string())));
+        }
+        if let Some(v) = audio_preset {
+            settings.push(("audio preset", Some(v.to_string())));
+        }
+        if let Some(v) = treble_eq {
+            settings.push(("treble eq", Some(format!("{v:.1} dB"))));
+        }
+        if let Some(v) = bass_eq {
+            settings.push(("bass eq", Some(format!("{v:.1} dB"))));
+        }
+        if let Some(v) = center_trim {
+            settings.push(("center trim", Some(format!("{v:.1} dB"))));
+        }
+        if let Some(v) = surround_upmixer {
+            settings.push(("surround upmix", Some(v.to_string())));
+        }
+        if let Some(v) = volume_leveler {
+            settings.push(("volume leveler", Some(v.to_string())));
+        }
+        if let Some(v) = virtualizer {
+            settings.push(("virtualizer", Some(v.to_string())));
+        }
+
+        settings
+    };
+
+    let mut rows: Vec<Row> = Vec::new();
+
+    match selected_profile {
+        Profile::Device(p) => {
+            rows.push(Row {
+                role: None,
+                device_id: p.device_id,
+                settings: device_settings(
+                    p.volume_level,
+                    None,
+                    p.led_brightness,
+                    p.node_name.as_deref(),
+                    p.audio_preset,
+                    p.treble_eq,
+                    p.bass_eq,
+                    p.center_trim,
+                    p.surround_upmixer,
+                    p.volume_leveler,
+                    p.virtualizer,
+                ),
+            });
+        }
+        Profile::Group(p) => {
+            rows.push(Row {
+                role: Some("master"),
+                device_id: p.master.device_id,
+                settings: device_settings(
+                    p.master.volume_level,
+                    None,
+                    p.master.led_brightness,
+                    p.master.node_name.as_deref(),
+                    p.master.audio_preset,
+                    p.master.treble_eq,
+                    p.master.bass_eq,
+                    p.master.center_trim,
+                    p.master.surround_upmixer,
+                    p.master.volume_leveler,
+                    p.master.virtualizer,
+                ),
+            });
+            for slave in p.slaves.iter() {
+                rows.push(Row {
+                    role: Some("slave"),
+                    device_id: slave.device_id,
+                    settings: device_settings(
+                        slave.volume_level,
+                        None,
+                        slave.led_brightness,
+                        slave.node_name.as_deref(),
+                        slave.audio_preset,
+                        slave.treble_eq,
+                        slave.bass_eq,
+                        slave.center_trim,
+                        slave.surround_upmixer,
+                        slave.volume_leveler,
+                        slave.virtualizer,
+                    ),
+                });
+            }
+        }
+        Profile::MultiplayerGroup(p) => {
+            rows.push(Row {
+                role: Some("master"),
+                device_id: p.master,
+                settings: device_settings(
+                    p.volume_level,
+                    None,
+                    p.led_brightness,
+                    p.node_name.as_deref(),
+                    p.audio_preset,
+                    p.treble_eq,
+                    p.bass_eq,
+                    p.center_trim,
+                    p.surround_upmixer,
+                    p.volume_leveler,
+                    p.virtualizer,
+                ),
+            });
+            for slave in p.slaves.iter() {
+                rows.push(Row {
+                    role: Some("zone slave"),
+                    device_id: slave.device_id,
+                    settings: device_settings(
+                        None,
+                        slave.volume_trim,
+                        slave.led_brightness,
+                        Some(slave.node_name.as_str()),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ),
+                });
+            }
+        }
+    }
+
+    let label_width = rows
+        .iter()
+        .flat_map(|r| r.settings.iter())
+        .map(|(label, _)| label.chars().count())
+        .max()
+        .unwrap_or_default()
+        .saturating_add(2);
+    let mut lines = Vec::new();
+
+    if let Some(source) = source {
+        let value = match source {
+            SourceSelection::Input { input } => {
+                Span::from(format!("input: {input}")).fg(ctx.ui.stylesheet.text_color)
+            }
+            SourceSelection::Preset { preset_id } => {
+                let preset_name = main_device_id
+                    .and_then(|device_id| ctx.state.find_device(&device_id))
+                    .and_then(|device| device.presets.as_ref())
+                    .and_then(|presets| {
+                        presets
+                            .preset
+                            .iter()
+                            .find(|preset| *preset.id == *preset_id)
+                            .map(|preset| preset.name.clone())
+                    });
+
+                match preset_name {
+                    Some(name) => Span::from(format!("preset: {name} ({preset_id})"))
+                        .fg(ctx.ui.stylesheet.text_color),
+                    None => Span::from(format!("preset '{preset_id}' is not available"))
+                        .fg(ctx.ui.stylesheet.error_color),
+                }
+            }
+        };
+        lines.push(Line::from(vec![
+            format!("{:<label_width$}", "source").fg(ctx.ui.stylesheet.text_color_sub),
+            value.fg(ctx.ui.stylesheet.text_color),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    for (index, row) in rows.into_iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::from(""));
+        }
+
+        let (name, model, status) = match ctx.state.find_device(&row.device_id) {
+            Some(device) => (
+                device
+                    .device_name()
+                    .unwrap_or_else(|| row.device_id.to_string()),
+                device.device_model().unwrap_or_default(),
+                None,
+            ),
+            None => (
+                row.device_id.to_string(),
+                String::new(),
+                Some("(not available)"),
+            ),
+        };
+
+        let mut header = Vec::new();
+        header.push(name.fg(ctx.ui.stylesheet.text_color).bold());
+        if !model.is_empty() {
+            header.push(format!(" ({model})").fg(ctx.ui.stylesheet.text_color_sub));
+        }
+        if let Some(status) = status {
+            header.push(format!(" {status}").fg(ctx.ui.stylesheet.text_color_sub));
+        }
+        if let Some(role) = row.role {
+            let role = role
+                .to_ascii_uppercase()
+                .fg(ctx.ui.stylesheet.accent_color_dark)
+                .bold();
+
+            let header_width: usize = header.iter().map(|span| span.width()).sum();
+            let padding = (area.width as usize).saturating_sub(header_width + role.width());
+            header.push(Span::from(" ".repeat(padding)));
+            header.push(role);
+        }
+
+        lines.push(Line::from(header));
+        lines.push(
+            Line::from("─".repeat(area.width as usize)).fg(ctx.ui.stylesheet.border_color_dark),
+        );
+
+        for (setting_label, setting_value) in row.settings {
+            lines.push(Line::from(vec![
+                format!("{setting_label:<label_width$}").fg(ctx.ui.stylesheet.text_color_sub),
+                match setting_value {
+                    Some(v) => Span::from(v.clone()).fg(ctx.ui.stylesheet.text_color),
+                    None => "unset".fg(ctx.ui.stylesheet.text_color_sub),
+                },
+            ]));
+        }
+    }
+
+    ctx.frame
+        .render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
 }
 
 fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
@@ -557,6 +880,7 @@ fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     let tabs = Tabs::new(Tab::iter().map(|v| v.to_string()))
         .select(ctx.ui.selected_tab as usize)
         .style(Style::default().fg(ctx.ui.stylesheet.text_color))
+        .divider(LINE_DIVIDER.fg(ctx.ui.stylesheet.text_color_sub))
         .block({
             let mut block = Block::bordered()
                 .border_type(BorderType::Rounded)
@@ -587,18 +911,7 @@ fn render_tabs_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
 }
 
 fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
-    let layout = Layout::new(
-        Direction::Horizontal,
-        [Constraint::Percentage(40), Constraint::Fill(1)],
-    )
-    .spacing(Spacing::Overlap(1))
-    .split(area);
-
-    let list_area = render_groupbox(ctx, Some("profiles"), layout[0], false);
-    let profile_area = render_groupbox(ctx, Some("profile details"), layout[1], false);
-
     let mut selected = None;
-    let mut profile_in_yaml_or_err = None;
     let list = ctx
         .state
         .sorted_profiles_iter()
@@ -615,10 +928,6 @@ fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         .map(|(index, (is_selected, p))| {
             if is_selected {
                 selected = Some(index);
-                profile_in_yaml_or_err = match &p.profile {
-                    Ok(profile) => yaml_serde::to_string(profile).ok(),
-                    Err(error) => Some(format!("Error: {error}")),
-                }
             }
 
             format!(
@@ -635,14 +944,25 @@ fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         .collect::<List>()
         .highlight_style(Style::new().bg(ctx.ui.stylesheet.accent_color_dark).bold());
 
+    let [list_area, profile_area] = area.layout(
+        &Layout::new(
+            Direction::Horizontal,
+            [Constraint::Percentage(40), Constraint::Fill(1)],
+        )
+        .spacing(Spacing::Overlap(1)),
+    );
+    let list_area = render_groupbox(ctx, Some("profiles"), list_area, false);
+
     if list.is_empty() {
-        let text = Line::from("No profiles.".fg(ctx.ui.stylesheet.accent_color));
-        let area = list_area.centered(
-            Constraint::Length(text.width() as u16),
-            Constraint::Length(1),
+        let paragraph = Paragraph::new(
+            "Create a new profile by pressing 'n'.".fg(ctx.ui.stylesheet.accent_color),
+        )
+        .wrap(Wrap { trim: false });
+        let area = area.centered(
+            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(area.width) as u16),
         );
-        ctx.frame
-            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+        ctx.frame.render_widget(paragraph, area);
     } else {
         ctx.frame.render_stateful_widget(
             list,
@@ -651,45 +971,21 @@ fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         );
     }
 
-    if ctx
-        .state
-        .busy_flags
-        .contains(BusyFlags::PROFILE_TRANSITIONING)
-    {
-        let text = "Applying profile... ⏳".fg(ctx.ui.stylesheet.accent_color);
-        let area = profile_area.centered(
-            Constraint::Length(text.width() as u16),
-            Constraint::Length(1),
-        );
-        ctx.frame
-            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
-    } else if let Some(yaml) = profile_in_yaml_or_err {
-        ctx.frame.render_widget(
-            Paragraph::new(yaml).wrap(Wrap { trim: false }),
-            profile_area,
-        );
-    } else {
-        let text = "Select a profile.".fg(ctx.ui.stylesheet.accent_color);
-        let area = profile_area.centered(
-            Constraint::Length(text.width() as u16),
-            Constraint::Length(1),
-        );
-        ctx.frame
-            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
-    }
+    render_profile_details_window(ctx, profile_area)
 }
 
 fn render_music_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     render_groupbox(ctx, None, area, false);
 
     if ctx.state.device_state.is_empty() {
-        let text = Line::from("Detecting devices... ⏳".fg(ctx.ui.stylesheet.accent_color));
+        let paragraph =
+            Paragraph::new("Detecting devices... ⏳".fg(ctx.ui.stylesheet.accent_color))
+                .wrap(Wrap { trim: false });
         let area = area.centered(
-            Constraint::Length(text.width() as u16),
-            Constraint::Length(1),
+            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(area.width) as u16),
         );
-        ctx.frame
-            .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+        ctx.frame.render_widget(paragraph, area);
     } else {
         let [volume_area, music_area] = area.layout(
             &Layout::new(
@@ -877,22 +1173,23 @@ fn render_music_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     }
                 }
             } else {
-                let text = Line::from("Loading... ⏳".fg(ctx.ui.stylesheet.text_color_sub));
-                let area = music_area.centered(
-                    Constraint::Length(text.width() as u16),
-                    Constraint::Length(1),
+                let paragraph =
+                    Paragraph::new("Loading... ⏳".fg(ctx.ui.stylesheet.text_color_sub))
+                        .wrap(Wrap { trim: false });
+                let area = area.centered(
+                    Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+                    Constraint::Length(paragraph.line_count(area.width) as u16),
                 );
-                ctx.frame
-                    .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+                ctx.frame.render_widget(paragraph, area);
             }
         } else {
-            let text = Line::from("Select a device.".fg(ctx.ui.stylesheet.text_color_sub));
-            let area = music_area.centered(
-                Constraint::Length(text.width() as u16),
-                Constraint::Length(1),
+            let paragraph = Paragraph::new("Select a device.".fg(ctx.ui.stylesheet.text_color_sub))
+                .wrap(Wrap { trim: false });
+            let area = area.centered(
+                Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
+                Constraint::Length(paragraph.line_count(area.width) as u16),
             );
-            ctx.frame
-                .render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), area);
+            ctx.frame.render_widget(paragraph, area);
         }
     }
 }
