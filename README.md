@@ -11,8 +11,8 @@ A terminal user interface compatible with BluOS, letting you control multi-playe
 
 ## Screenshots
 
-![Screenshot 1](screenshots/screen-1.jpg)
+![Screenshot 1](https://github.com/LimpSquid/blutui/blob/main/screenshots/screen-1.jpg?raw=true)
 
-![Screenshot 2](screenshots/screen-2.jpg)
+![Screenshot 2](https://github.com/LimpSquid/blutui/blob/main/screenshots/screen-2.jpg?raw=true)
 
-![Screenshot 3](screenshots/screen-3.jpg)
+![Screenshot 3](https://github.com/LimpSquid/blutui/blob/main/screenshots/screen-3.jpg?raw=true)
