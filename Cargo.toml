@@ -3,6 +3,8 @@ name = "blutui"
 version = "0.1.0"
 edition = "2024"
 default-run = "blutui"
+description = "A terminal user interface compatible with BluOS, letting you control multi-player setups with profiles"
+license = "GPL-3.0-only"
 
 [[bin]]
 name = "blutui"
@@ -28,7 +30,7 @@ ansi-to-tui = { version = "8", optional = true }
 bitflags = { version = "2" }
 chrono = { version = "0.4" }
 clap = { version = "4.4", features = [ "derive" ] }
-crossterm = { version = "*", features = [ "event-stream" ] }
+crossterm = { version = "0.29.0", features = [ "event-stream" ] }
 futures = { version = "0.3" }
 image = { version = "0.25", optional = true }
 itertools = { version = "0.14" }
