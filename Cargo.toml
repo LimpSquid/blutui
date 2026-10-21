@@ -1,6 +1,6 @@
 [package]
 name = "blutui"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 default-run = "blutui"
 description = "A terminal user interface compatible with BluOS, letting you control multi-player setups with profiles"
