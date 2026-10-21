@@ -79,20 +79,22 @@ impl ProfileType {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum WizardStep {
     #[default]
-    ChooseProfileType,
+    SelectProfileType,
     SelectDevices,
     EditDeviceSettings,
     SelectSourceInput,
+    ChooseGroupName,
     ChooseProfileName,
 }
 
 impl WizardStep {
     fn header(&self) -> &'static str {
         match self {
-            Self::ChooseProfileType => "choose a profile type",
+            Self::SelectProfileType => "select profile type",
             Self::SelectDevices => "select devices",
             Self::EditDeviceSettings => "edit device settings",
             Self::SelectSourceInput => "select source input",
+            Self::ChooseGroupName => "choose a group name",
             Self::ChooseProfileName => "choose a profile name",
         }
     }
@@ -407,6 +409,7 @@ pub struct NewOrEditProfileDialog {
     /// entry is the group master, the remaining entries are slaves
     selected_devices_for_group: Vec<DeviceSettings>,
     profile_name_input: TextFieldState,
+    group_name_input: TextFieldState,
     focused_device: Option<DeviceId>,
     focused_row: usize,
     inline_text_input: Option<TextFieldState>,
@@ -481,6 +484,8 @@ impl NewOrEditProfileDialog {
                 apply_source(&mut dialog, p.source);
             }
             Profile::MultiplayerGroup(p) => {
+                dialog.group_name_input =
+                    TextFieldState::with_value(p.group_name.clone().unwrap_or_default());
                 dialog.selected_profile_type = ProfileType::MultiplayerGroup;
                 dialog.selected_devices_for_group.push(DeviceSettings {
                     device_id: p.master,
@@ -717,6 +722,11 @@ impl NewOrEditProfileDialog {
             }
             _ => None,
         });
+        let group_name = match self.group_name_input.value().trim() {
+            "" => None,
+            s => Some(s.to_owned()),
+        };
+
         let profile = match self.selected_profile_type {
             ProfileType::NormalGroup => {
                 let mut devices: Vec<_> = self
@@ -768,6 +778,7 @@ impl NewOrEditProfileDialog {
                 Profile::MultiplayerGroup(MultiplayerGroupProfile {
                     slaves,
                     source,
+                    group_name,
                     master: master.device_id,
                     volume_level: master.volume_level,
                     node_name: master.node_name.clone(),
@@ -779,8 +790,6 @@ impl NewOrEditProfileDialog {
                     virtualizer: master.virtualizer,
                     volume_leveler: master.volume_leveler,
                     led_brightness: master.led_brightness,
-                    // TODO
-                    group_name: None,
                     ungroup_extra: None,
                 })
             }
@@ -813,7 +822,7 @@ impl NewOrEditProfileDialog {
         Ok(profile)
     }
 
-    fn render_choose_profile_type(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
+    fn render_select_profile_type(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
         let [body, footer] = area.layout(
             &Layout::new(
                 Direction::Vertical,
@@ -1102,7 +1111,7 @@ impl NewOrEditProfileDialog {
     }
 
     fn render_select_source_input(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
-        const TABS_LABEL: &str = "Choose the input source:";
+        const TABS_LABEL: &str = "Select the input source:";
 
         let [body, footer] = area.layout(
             &Layout::new(
@@ -1275,6 +1284,37 @@ impl NewOrEditProfileDialog {
         }
     }
 
+    fn render_choose_group_name(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
+        let [body, footer] = area.layout(&Layout::new(
+            Direction::Vertical,
+            [Constraint::Fill(1), Constraint::Length(1)],
+        ));
+        let [input_area, hint_area] = body.layout(
+            &Layout::new(
+                Direction::Vertical,
+                [Constraint::Length(3), Constraint::Fill(1)],
+            )
+            .spacing(1)
+            .margin(1),
+        );
+
+        let input = TextField::with_label("group name")
+            .block(
+                Block::bordered()
+                    .border_type(BorderType::Thick)
+                    .fg(ctx.stylesheet.highlight_color),
+            )
+            .label_style(Style::new().fg(ctx.stylesheet.text_color_sub))
+            .text_style(Style::new().fg(ctx.stylesheet.text_color));
+        input.render(input_area, ctx.buffer, &mut self.group_name_input.clone());
+
+        Line::from("NB: the group name is not set if empty")
+            .fg(ctx.stylesheet.text_color_sub)
+            .alignment(Alignment::Center)
+            .render(hint_area, ctx.buffer);
+        Keybindings::new(&[("ESC", "Close"), ("ENTER", "Confirm")]).render(footer, ctx);
+    }
+
     fn render_choose_profile_name(&self, area: Rect, ctx: &mut ComponentContext<'_>) {
         let [body, footer] = area.layout(&Layout::new(
             Direction::Vertical,
@@ -1324,8 +1364,8 @@ impl DialogComponent for NewOrEditProfileDialog {
         state: &AppState,
     ) -> Option<DialogEvent> {
         match (self.step, code) {
-            // Choose profile type
-            (WizardStep::ChooseProfileType, KeyCode::Enter) => {
+            // Select profile type
+            (WizardStep::SelectProfileType, KeyCode::Enter) => {
                 self.step = WizardStep::SelectDevices;
                 self.focused_device = state
                     .sorted_device_state_iter()
@@ -1333,13 +1373,13 @@ impl DialogComponent for NewOrEditProfileDialog {
                     .next();
                 None
             }
-            (WizardStep::ChooseProfileType, KeyCode::Up) => {
+            (WizardStep::SelectProfileType, KeyCode::Up) => {
                 self.selected_profile_type =
                     select_previous(ProfileType::iter(), |t| t, Some(self.selected_profile_type))
                         .unwrap_or_default();
                 None
             }
-            (WizardStep::ChooseProfileType, KeyCode::Down) => {
+            (WizardStep::SelectProfileType, KeyCode::Down) => {
                 self.selected_profile_type =
                     select_next(ProfileType::iter(), |t| t, Some(self.selected_profile_type))
                         .unwrap_or_default();
@@ -1605,8 +1645,23 @@ impl DialogComponent for NewOrEditProfileDialog {
             }
             (WizardStep::SelectSourceInput, KeyCode::Enter) => {
                 if self.source_selection_block_reason().is_none() {
-                    self.step = WizardStep::ChooseProfileName;
+                    self.step = if self.selected_profile_type.is_zone_group() {
+                        WizardStep::ChooseGroupName
+                    } else {
+                        WizardStep::ChooseProfileName
+                    };
                 }
+                None
+            }
+
+            // Choose group name
+            (WizardStep::ChooseGroupName, KeyCode::Enter) => {
+                self.step = WizardStep::ChooseProfileName;
+                None
+            }
+            (WizardStep::ChooseGroupName, KeyCode::Esc) => Some(DialogEvent::Closed),
+            (WizardStep::ChooseGroupName, code) => {
+                self.group_name_input.on_key_press(code, modifiers);
                 None
             }
 
@@ -1659,10 +1714,11 @@ impl Component for NewOrEditProfileDialog {
         dialog.render(area, ctx.buffer);
 
         match self.step {
-            WizardStep::ChooseProfileType => self.render_choose_profile_type(drawable_area, ctx),
+            WizardStep::SelectProfileType => self.render_select_profile_type(drawable_area, ctx),
             WizardStep::SelectDevices => self.render_select_devices(drawable_area, ctx),
             WizardStep::EditDeviceSettings => self.render_edit_device_settings(drawable_area, ctx),
             WizardStep::SelectSourceInput => self.render_select_source_input(drawable_area, ctx),
+            WizardStep::ChooseGroupName => self.render_choose_group_name(drawable_area, ctx),
             WizardStep::ChooseProfileName => self.render_choose_profile_name(drawable_area, ctx),
         }
     }

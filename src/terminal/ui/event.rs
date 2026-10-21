@@ -123,7 +123,7 @@ pub fn user_event(event: UserEvent, state: &AppState, ui: &mut Ui) {
                 }
             }
             (Tabs, KeyCode::Char('e' | 'E')) if ui.selected_tab == Profile => {
-                if let Some(profile_id) = ui.selected_profile.clone()
+                if let Some(profile_id) = ui.selected_profile.as_ref()
                     && let Some(profile) = state.find_profile(&profile_id)
                 {
                     match profile.profile.to_owned() {

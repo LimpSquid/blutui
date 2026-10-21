@@ -607,10 +607,12 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         settings: Vec<(&'static str, Option<String>)>,
     }
 
-    let (main_device_id, source) = match selected_profile {
-        Profile::Device(p) => (Some(p.device_id), p.source.as_ref()),
-        Profile::Group(p) => (Some(p.master.device_id), p.source.as_ref()),
-        Profile::MultiplayerGroup(p) => (Some(p.master), p.source.as_ref()),
+    let (main_device_id, source, group_name) = match selected_profile {
+        Profile::Device(p) => (Some(p.device_id), p.source.as_ref(), None),
+        Profile::Group(p) => (Some(p.master.device_id), p.source.as_ref(), None),
+        Profile::MultiplayerGroup(p) => {
+            (Some(p.master), p.source.as_ref(), p.group_name.as_deref())
+        }
     };
 
     let device_settings = |volume_level: Option<u8>,
@@ -772,6 +774,13 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         .saturating_add(2);
     let mut lines = Vec::new();
 
+    if let Some(group_name) = group_name {
+        lines.push(Line::from(vec![
+            format!("{:<label_width$}", "group name").fg(ctx.ui.stylesheet.text_color_sub),
+            group_name.fg(ctx.ui.stylesheet.text_color),
+        ]));
+    }
+
     if let Some(source) = source {
         let value = match source {
             SourceSelection::Input { input } => {
@@ -801,6 +810,9 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             format!("{:<label_width$}", "source").fg(ctx.ui.stylesheet.text_color_sub),
             value.fg(ctx.ui.stylesheet.text_color),
         ]));
+    }
+
+    if !lines.is_empty() {
         lines.push(Line::from(""));
     }
 
@@ -958,9 +970,9 @@ fn render_profile_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             "Create a new profile by pressing 'n'.".fg(ctx.ui.stylesheet.accent_color),
         )
         .wrap(Wrap { trim: false });
-        let area = area.centered(
-            Constraint::Length(paragraph.line_width().min(area.width as usize) as u16),
-            Constraint::Length(paragraph.line_count(area.width) as u16),
+        let area = list_area.centered(
+            Constraint::Length(paragraph.line_width().min(list_area.width as usize) as u16),
+            Constraint::Length(paragraph.line_count(list_area.width) as u16),
         );
         ctx.frame.render_widget(paragraph, area);
     } else {

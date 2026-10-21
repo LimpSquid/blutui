@@ -436,6 +436,18 @@ impl HttpClient {
         Ok(())
     }
 
+    pub async fn set_zone_name(&self, name: &str) -> anyhow::Result<()> {
+        self.client
+            .post(self.api_path("setting")?)
+            .form(&[("zonename", name)])
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT))
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(())
+    }
+
     pub async fn volume_step(
         &self,
         db_step: f64,

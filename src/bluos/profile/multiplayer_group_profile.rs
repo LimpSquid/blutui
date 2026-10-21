@@ -390,6 +390,9 @@ impl StateMachine for MultiplayerGroupProfile {
                 if let Some(node_name) = self.node_name.as_deref() {
                     client.set_node_name(node_name).await?;
                 }
+                if let Some(group_name) = self.group_name.as_deref() {
+                    client.set_zone_name(group_name).await?;
+                }
                 if let Some(brightness) = self.led_brightness {
                     client.set_led_brightness(brightness).await?;
                 }
