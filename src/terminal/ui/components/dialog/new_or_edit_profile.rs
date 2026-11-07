@@ -7,7 +7,7 @@ use crate::bluos::profile::{
     DeviceProfile, GroupProfile, GroupProfileDevice, MultiplayerGroupProfile,
     MultiplayerGroupProfileSlave, Profile, SourceSelection,
 };
-use crate::bluos::{AudioPreset, LedBrightness, SettingState};
+use crate::bluos::{AudioPreset, DeviceAudioSettings, LedBrightness, SettingState};
 use crate::profile::validate_profile_name;
 use crate::terminal::app::DeviceState;
 use crate::types::DeviceId;
@@ -172,40 +172,47 @@ impl DeviceSettings {
         }
     }
 
-    fn adjust(&mut self, setting: &DeviceSetting, step: i8) {
+    fn adjust(
+        &mut self,
+        setting: &DeviceSetting,
+        step: i8,
+        audio_settings: Option<&DeviceAudioSettings>,
+    ) {
         let kind = setting.kind();
-        let (current, step_resolution) = match kind {
-            DeviceSettingKind::TrebleEq => (self.treble_eq.unwrap_or_default(), DB_STEP_RESOLUTION),
-            DeviceSettingKind::BassEq => (self.bass_eq.unwrap_or_default(), DB_STEP_RESOLUTION),
-            DeviceSettingKind::CenterTrim => {
-                (self.center_trim.unwrap_or_default(), DB_STEP_RESOLUTION)
-            }
-            DeviceSettingKind::VolumeTrim => {
-                (self.volume_trim.unwrap_or_default(), DB_STEP_RESOLUTION)
-            }
-            DeviceSettingKind::VolumeLevel => (
-                self.volume_level.unwrap_or_default() as f64,
-                VOLUME_LEVEL_RESOLUTION,
-            ),
+        let (step_resolution, min, max) = match kind {
+            DeviceSettingKind::TrebleEq => audio_settings
+                .and_then(|s| s.equalizer_treble_db)
+                .and_then(|s| Some((s.step?, s.min?, s.max?)))
+                .unwrap_or((DB_STEP_RESOLUTION, -6.0, 6.0)),
+            DeviceSettingKind::BassEq => audio_settings
+                .and_then(|s| s.equalizer_bass_db)
+                .and_then(|s| Some((s.step?, s.min?, s.max?)))
+                .unwrap_or((DB_STEP_RESOLUTION, -6.0, 6.0)),
+            DeviceSettingKind::CenterTrim => audio_settings
+                .and_then(|s| s.equalizer_center_trim_db)
+                .and_then(|s| Some((s.step?, s.min?, s.max?)))
+                .unwrap_or((DB_STEP_RESOLUTION, -6.0, 6.0)),
+            // TODO: these values should come from the settings of the BluOS device itself
+            DeviceSettingKind::VolumeTrim => (DB_STEP_RESOLUTION, -10.0, 10.0),
+            DeviceSettingKind::VolumeLevel => (VOLUME_LEVEL_RESOLUTION, 0.0, 100.0),
             _ => return,
         };
-        let delta = step as f64 * step_resolution;
-        let new = current + delta;
-        // TODO: these values should come from the settings of the BluOS device itself
-        let clamped = match kind {
-            DeviceSettingKind::TrebleEq
-            | DeviceSettingKind::BassEq
-            | DeviceSettingKind::CenterTrim => new.clamp(-6.0, 6.0),
-            DeviceSettingKind::VolumeTrim => new.clamp(-10.0, 10.0),
-            DeviceSettingKind::VolumeLevel => new.clamp(0.0, 100.0),
+        let current = match kind {
+            DeviceSettingKind::TrebleEq => self.treble_eq.unwrap_or_default(),
+            DeviceSettingKind::BassEq => self.bass_eq.unwrap_or_default(),
+            DeviceSettingKind::CenterTrim => self.center_trim.unwrap_or_default(),
+            DeviceSettingKind::VolumeTrim => self.volume_trim.unwrap_or_default(),
+            DeviceSettingKind::VolumeLevel => self.volume_level.unwrap_or_default() as f64,
             _ => unreachable!(),
         };
+        let delta = step as f64 * step_resolution;
+        let new = (current + delta).clamp(min, max);
         match kind {
-            DeviceSettingKind::TrebleEq => self.treble_eq = Some(clamped),
-            DeviceSettingKind::BassEq => self.bass_eq = Some(clamped),
-            DeviceSettingKind::CenterTrim => self.center_trim = Some(clamped),
-            DeviceSettingKind::VolumeTrim => self.volume_trim = Some(clamped),
-            DeviceSettingKind::VolumeLevel => self.volume_level = Some(clamped as u8),
+            DeviceSettingKind::TrebleEq => self.treble_eq = Some(new),
+            DeviceSettingKind::BassEq => self.bass_eq = Some(new),
+            DeviceSettingKind::CenterTrim => self.center_trim = Some(new),
+            DeviceSettingKind::VolumeTrim => self.volume_trim = Some(new),
+            DeviceSettingKind::VolumeLevel => self.volume_level = Some(new as u8),
             _ => unreachable!(),
         }
     }
@@ -609,7 +616,11 @@ impl NewOrEditProfileDialog {
             return;
         };
 
-        device.adjust(&setting, step);
+        let audio_settings = state
+            .find_device(&device_id)
+            .and_then(|d| d.audio_settings.as_ref());
+
+        device.adjust(&setting, step, audio_settings);
     }
 
     fn device_selection_block_reason(&self, state: &AppState) -> Option<String> {

@@ -301,16 +301,48 @@ pub struct DevicePresets {
     pub preset: Vec<DevicePreset>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct SettingWithRange<T> {
+    pub value: Option<T>,
+    pub min: Option<T>,
+    pub max: Option<T>,
+    pub step: Option<T>,
+}
+
+impl TryFrom<&DeviceSetting> for SettingWithRange<f64> {
+    type Error = anyhow::Error;
+
+    fn try_from(setting: &DeviceSetting) -> Result<Self, Self::Error> {
+        let options = setting.options.first();
+
+        Ok(Self {
+            value: setting.value.as_ref().map(|s| s.parse()).transpose()?,
+            min: options
+                .and_then(|o| o.min.as_ref())
+                .map(|s| s.parse())
+                .transpose()?,
+            max: options
+                .and_then(|o| o.max.as_ref())
+                .map(|s| s.parse())
+                .transpose()?,
+            step: options
+                .and_then(|o| o.step.as_ref())
+                .map(|s| s.parse())
+                .transpose()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DeviceAudioSettings {
     /// NB: Only available on specific devices
     pub audio_preset: Option<AudioPreset>,
     /// NB: Only available on specific devices
-    pub equalizer_treble_db: Option<f64>,
+    pub equalizer_treble_db: Option<SettingWithRange<f64>>,
     /// NB: Only available on specific devices
-    pub equalizer_bass_db: Option<f64>,
+    pub equalizer_bass_db: Option<SettingWithRange<f64>>,
     /// NB: Only available on specific devices
-    pub equalizer_center_trim_db: Option<f64>,
+    pub equalizer_center_trim_db: Option<SettingWithRange<f64>>,
     /// NB: Only available on specific devices
     pub surround_upmixer: Option<SettingState>,
     /// NB: Only available on specific devices
@@ -413,6 +445,25 @@ pub struct DeviceSetting {
     pub id: String,
     #[serde(rename = "@value")]
     pub value: Option<String>,
+    #[serde(default, rename = "value")]
+    pub options: Vec<DeviceSettingOptions>,
+}
+
+#[allow(unused)]
+#[derive(Debug, Deserialize)]
+pub struct DeviceSettingOptions {
+    #[serde(rename = "@min")]
+    pub min: Option<String>,
+    #[serde(rename = "@max")]
+    pub max: Option<String>,
+    #[serde(rename = "@step")]
+    pub step: Option<String>,
+    #[serde(rename = "@units")]
+    pub units: Option<String>,
+    #[serde(rename = "@displayName")]
+    pub display_name: Option<String>,
+    #[serde(rename = "@name")]
+    pub name: Option<String>,
 }
 
 #[derive(

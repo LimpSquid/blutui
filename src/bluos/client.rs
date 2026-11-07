@@ -197,14 +197,10 @@ impl HttpClient {
         let audio_settings = DeviceAudioSettings {
             audio_preset: settings
                 .find_and_then("preset", |s| s.value.as_ref().and_then(|v| v.parse().ok())),
-            equalizer_treble_db: settings.find_and_then("eq-treble", |s| {
-                s.value.as_ref().and_then(|v| v.parse().ok())
-            }),
-            equalizer_bass_db: settings
-                .find_and_then("eq-bass", |s| s.value.as_ref().and_then(|v| v.parse().ok())),
-            equalizer_center_trim_db: settings.find_and_then("eq-centre-trim", |s| {
-                s.value.as_ref().and_then(|v| v.parse().ok())
-            }),
+            equalizer_treble_db: settings.find_and_then("eq-treble", |s| s.try_into().ok()),
+            equalizer_bass_db: settings.find_and_then("eq-bass", |s| s.try_into().ok()),
+            equalizer_center_trim_db: settings
+                .find_and_then("eq-centre-trim", |s| s.try_into().ok()),
             surround_upmixer: settings.find_and_then("eq-upmix", |s| {
                 s.value.as_ref().and_then(|v| v.parse().ok())
             }),
