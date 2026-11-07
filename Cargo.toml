@@ -11,7 +11,7 @@ name = "blutui"
 path = "src/bin/tui.rs"
 
 [[bin]]
-name = "settings_crawler"
+name = "bluos_settings_crawler"
 path = "src/bin/settings_crawler.rs"
 
 [profile.release]
