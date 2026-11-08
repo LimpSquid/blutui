@@ -144,18 +144,18 @@ impl HttpClient {
             .text()
             .await?;
         let html = Html::parse_document(&response);
-        let key_selector = Selector::parse(r#"div.ui-block-a"#)
-            .map_err(|_| anyhow::anyhow!("invalid selector"))?;
-        let value_selector = Selector::parse(r#"div.ui-block-b"#)
-            .map_err(|_| anyhow::anyhow!("invalid selector"))?;
+        let key_selector = Selector::parse("dl.diag-kv > dt")
+            .map_err(|_| anyhow::anyhow!("invalid key selector"))?;
+        let value_selector = Selector::parse("dl.diag-kv > dd")
+            .map_err(|_| anyhow::anyhow!("invalid value selector"))?;
+
         let mut fields: HashMap<_, _> = html
             .select(&key_selector)
             .zip(html.select(&value_selector))
             .map(|(key, value)| {
-                (
-                    key.inner_html().to_ascii_lowercase(),
-                    value.inner_html().trim().to_owned(),
-                )
+                let key = key.text().collect::<String>().trim().to_ascii_lowercase();
+                let value = value.text().collect::<String>().trim().to_owned();
+                (key, value)
             })
             .collect();
 
