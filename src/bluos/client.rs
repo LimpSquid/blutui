@@ -134,6 +134,12 @@ impl HttpClient {
     }
 
     pub async fn get_diagnostics(&self) -> anyhow::Result<DeviceDiagnostics> {
+        const SELECTORS: &[(&str, &str)] = &[
+            ("div.ui-block-a", "div.ui-block-b"),
+            // Since version: 4.18.18
+            ("dl.diag-kv > dt", "dl.diag-kv > dd"),
+        ];
+
         let response = self
             .client
             .get(self.web_path("diagnostics")?)
@@ -144,25 +150,30 @@ impl HttpClient {
             .text()
             .await?;
         let html = Html::parse_document(&response);
-        let key_selector = Selector::parse("dl.diag-kv > dt")
-            .map_err(|_| anyhow::anyhow!("invalid key selector"))?;
-        let value_selector = Selector::parse("dl.diag-kv > dd")
-            .map_err(|_| anyhow::anyhow!("invalid value selector"))?;
 
-        let mut fields: HashMap<_, _> = html
-            .select(&key_selector)
-            .zip(html.select(&value_selector))
-            .map(|(key, value)| {
-                let key = key.text().collect::<String>().trim().to_ascii_lowercase();
-                let value = value.text().collect::<String>().trim().to_owned();
-                (key, value)
-            })
-            .collect();
+        let mut fields = HashMap::new();
+        for (key_selector, value_selector) in SELECTORS {
+            let key_selector = Selector::parse(key_selector)
+                .map_err(|_| anyhow::anyhow!("invalid key selector"))?;
+            let value_selector = Selector::parse(value_selector)
+                .map_err(|_| anyhow::anyhow!("invalid value selector"))?;
+            fields.extend(
+                html.select(&key_selector)
+                    .zip(html.select(&value_selector))
+                    .map(|(key, value)| {
+                        (
+                            key.inner_html().to_ascii_lowercase(),
+                            value.inner_html().trim().to_owned(),
+                        )
+                    }),
+            );
+        }
 
         Ok(DeviceDiagnostics {
             connected_to_network: fields.remove("connected to network:"),
             signal_strength: fields.remove("signal strength:"),
             uptime: fields.remove("uptime:"),
+            bluos_version: fields.remove("bluos version:"),
         })
     }
 

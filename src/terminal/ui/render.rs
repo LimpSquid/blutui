@@ -402,6 +402,12 @@ fn render_device_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 .map(|d| d.uptime.to_owned().unwrap_or("N/A".to_string())),
         ));
         data.push((
+            "BluOS version".to_string(),
+            diagnostics
+                .as_ref()
+                .map(|d| d.bluos_version.to_owned().unwrap_or("N/A".to_string())),
+        ));
+        data.push((
             "volume level".to_string(),
             volume
                 .as_ref()

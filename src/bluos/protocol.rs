@@ -256,6 +256,7 @@ pub struct DeviceDiagnostics {
     pub connected_to_network: Option<String>,
     pub signal_strength: Option<String>,
     pub uptime: Option<String>,
+    pub bluos_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

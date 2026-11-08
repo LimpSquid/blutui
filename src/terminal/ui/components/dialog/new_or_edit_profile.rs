@@ -1041,9 +1041,10 @@ impl NewOrEditProfileDialog {
         let device = self.selected_devices_for_group.get(device_index);
         let device_name = device
             .and_then(|d| ctx.state.find_device(&d.device_id))
-            .map_or_else(String::new, |s| {
-                s.device_name().unwrap_or_else(|| s.device.id.to_string())
-            });
+            .map_or_else(
+                || device.map(|d| d.device_id.to_string()).unwrap_or_default(),
+                |s| s.device_name().unwrap_or_else(|| s.device.id.to_string()),
+            );
         let header = Line::from(vec![
             format!("device {} of {device_count}: ", device_index + 1)
                 .fg(ctx.stylesheet.text_color_sub),
