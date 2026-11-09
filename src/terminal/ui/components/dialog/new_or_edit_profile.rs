@@ -1180,6 +1180,9 @@ impl NewOrEditProfileDialog {
                         .alignment(Alignment::Center),
                 );
                 text.render(list_area, ctx.buffer);
+
+                Keybindings::new(&[("TAB", "Change Input"), ("ESC", "Close"), ("ENTER", "Next")])
+                    .render(footer, ctx);
             }
             Some(SourceSelectionState::Input(selection)) => {
                 let mut selected = None;
@@ -1217,8 +1220,6 @@ impl NewOrEditProfileDialog {
                         .bold()
                         .alignment(Alignment::Center)
                         .render(input_or_hint_area, ctx.buffer);
-                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ENTER", "Next"), ("ESC", "Close")])
-                        .render(footer, ctx);
                 } else if let Some(input) = selection.as_deref()
                     && selected.is_none()
                 {
@@ -1229,17 +1230,20 @@ impl NewOrEditProfileDialog {
                     .bold()
                     .alignment(Alignment::Center)
                     .render(input_or_hint_area, ctx.buffer);
-                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
-                        .render(footer, ctx);
                 } else {
                     Line::from("NB: Some input sources are only available when connected or configured via the app.")
                         .fg(ctx.stylesheet.text_color_sub)
                         .bold()
                         .alignment(Alignment::Center)
                         .render(input_or_hint_area, ctx.buffer);
-                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
-                        .render(footer, ctx);
                 };
+                Keybindings::new(&[
+                    ("TAB", "Change Input"),
+                    ("🡳/🡱", "Selection"),
+                    ("ESC", "Close"),
+                    ("ENTER", "Next"),
+                ])
+                .render(footer, ctx);
             }
             Some(SourceSelectionState::Preset(selection)) => {
                 let mut selected = None;
@@ -1286,12 +1290,15 @@ impl NewOrEditProfileDialog {
                     .bold()
                     .alignment(Alignment::Center)
                     .render(input_or_hint_area, ctx.buffer);
-                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
-                        .render(footer, ctx);
-                } else {
-                    Keybindings::new(&[("🡳/🡱", "Selection"), ("ESC", "Close"), ("ENTER", "Next")])
-                        .render(footer, ctx);
-                };
+                }
+
+                Keybindings::new(&[
+                    ("TAB", "Change Input"),
+                    ("🡳/🡱", "Selection"),
+                    ("ESC", "Close"),
+                    ("ENTER", "Next"),
+                ])
+                .render(footer, ctx);
             }
         }
     }
