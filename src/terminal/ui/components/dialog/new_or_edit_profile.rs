@@ -42,7 +42,7 @@ impl ProfileType {
             Self::MultiplayerGroup => "Multiple BluOS players playing the same audio in sync.",
             Self::SingleDevice => "A single BluOS player.",
             Self::HomeTheaterGroup => {
-                "Multiple BluOS players in a home-theater surround sound setup."
+                "Multiple BluOS players in a home-theater surround sound setup (available in future release)."
             }
         }
     }
@@ -824,8 +824,8 @@ impl NewOrEditProfileDialog {
                     led_brightness: device.led_brightness,
                 })
             }
-            _ => {
-                todo!();
+            ProfileType::HomeTheaterGroup => {
+                anyhow::bail!("Home-theater group available in future release.")
             }
         };
 
