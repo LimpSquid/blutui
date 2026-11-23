@@ -7,6 +7,7 @@ use scraper::{Html, Selector};
 use serde::Serialize;
 
 use super::protocol::*;
+use crate::bluos::{VOLUME_LEVEL_MAX, VOLUME_LEVEL_MIN};
 use crate::discover::Device;
 
 /// The long-polling timeout passed to the BluOS device
@@ -52,8 +53,19 @@ impl PollOpts {
 
 #[derive(Debug, Clone)]
 pub enum ZoneMode {
-    Group { group_name: Option<String> },
-    MultiplayerGroup { group_name: Option<String> },
+    Group {
+        group_name: Option<String>,
+    },
+    MultiplayerGroup {
+        group_name: Option<String>,
+    },
+    HomeTheaterGroup {
+        group_name: Option<String>,
+        channel_mode: ZoneChannel,
+        // In meters
+        distance: f64,
+        zone_opts: Vec<(ZoneChannel, f64 /* distance in meters */)>,
+    },
 }
 
 #[derive(Clone)]
@@ -358,7 +370,10 @@ impl HttpClient {
             .client
             .get(self.api_path("Volume")?)
             .query(&[
-                ("level", format!("{}", level.clamp(0, 100))),
+                (
+                    "level",
+                    format!("{}", level.clamp(VOLUME_LEVEL_MIN, VOLUME_LEVEL_MAX)),
+                ),
                 ("tell_slaves", format!("{}", tell_slaves as u8)),
             ])
             .timeout(Duration::from_secs(REQUEST_TIMEOUT))
@@ -372,7 +387,7 @@ impl HttpClient {
         Ok(device_volume)
     }
 
-    pub async fn set_zone_slave_volume_level(
+    pub async fn set_zone_slave_volume(
         &self,
         (slave_ip, slave_port): (IpAddr, u16),
         db: f64,
@@ -588,6 +603,36 @@ impl HttpClient {
                 query.push((
                     "slaveChannelMode",
                     endpoints.iter().map(|_| "default").join(","),
+                ));
+                if let Some(group_name) = group_name {
+                    query.push(("group", group_name));
+                }
+            }
+            ZoneMode::HomeTheaterGroup {
+                group_name,
+                channel_mode,
+                distance,
+                zone_opts,
+            } => {
+                anyhow::ensure!(
+                    endpoints.len() == zone_opts.len(),
+                    "zone_opts must match endpoints"
+                );
+                query.push(("channelMode", channel_mode.to_string()));
+                query.push(("distance", format!("{:.1}", distance)));
+                query.push((
+                    "slaveChannelMode",
+                    zone_opts
+                        .iter()
+                        .map(|(channel, _)| channel.to_string())
+                        .join(","),
+                ));
+                query.push((
+                    "slaveDistance",
+                    zone_opts
+                        .iter()
+                        .map(|(_, distance)| format!("{:.1}", distance))
+                        .join(","),
                 ));
                 if let Some(group_name) = group_name {
                     query.push(("group", group_name));

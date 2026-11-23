@@ -7,7 +7,10 @@ use crate::bluos::profile::{
     DeviceProfile, GroupProfile, GroupProfileDevice, MultiplayerGroupProfile,
     MultiplayerGroupProfileSlave, Profile, SourceSelection,
 };
-use crate::bluos::{AudioPreset, DeviceAudioSettings, LedBrightness, SettingState};
+use crate::bluos::{
+    AudioPreset, DISTANCE_MAX, DISTANCE_MIN, DISTANCE_STEP_RESOLUTION, DeviceAudioSettings,
+    LedBrightness, SettingState,
+};
 use crate::profile::validate_profile_name;
 use crate::terminal::app::DeviceState;
 use crate::types::DeviceId;
@@ -42,7 +45,7 @@ impl ProfileType {
             Self::MultiplayerGroup => "Multiple BluOS players playing the same audio in sync.",
             Self::SingleDevice => "A single BluOS player.",
             Self::HomeTheaterGroup => {
-                "Multiple BluOS players in a home-theater surround sound setup (available in future release)."
+                "Multiple BluOS players in a home-theater surround sound setup."
             }
         }
     }
@@ -65,14 +68,12 @@ impl ProfileType {
         }
     }
 
-    fn is_group(&self) -> bool {
-        matches!(
-            self,
-            Self::NormalGroup | Self::MultiplayerGroup | Self::HomeTheaterGroup
-        )
+    fn is_multiplayer_group(&self) -> bool {
+        matches!(self, Self::MultiplayerGroup)
     }
-    fn is_zone_group(&self) -> bool {
-        matches!(self, Self::MultiplayerGroup | Self::HomeTheaterGroup)
+
+    fn is_home_theater_group(&self) -> bool {
+        matches!(self, Self::HomeTheaterGroup)
     }
 }
 
@@ -119,6 +120,9 @@ impl PartialEq for SourceSelectionState {
 enum DeviceRole {
     Master,
     Slave,
+    Front,
+    SideLeft,
+    SideRight,
     None,
 }
 
@@ -136,6 +140,7 @@ struct DeviceSettings {
     surround_upmixer: Option<SettingState>,
     volume_leveler: Option<SettingState>,
     virtualizer: Option<SettingState>,
+    distance: Option<f64>,
 }
 
 impl DeviceSettings {
@@ -153,6 +158,7 @@ impl DeviceSettings {
             surround_upmixer: None,
             volume_leveler: None,
             virtualizer: None,
+            distance: None,
         }
     }
 
@@ -169,6 +175,7 @@ impl DeviceSettings {
             DeviceSettingKind::SurroundUpmixer => self.surround_upmixer.is_some(),
             DeviceSettingKind::VolumeLeveler => self.volume_leveler.is_some(),
             DeviceSettingKind::Virtualizer => self.virtualizer.is_some(),
+            DeviceSettingKind::Distance => self.distance.is_some(),
         }
     }
 
@@ -195,6 +202,7 @@ impl DeviceSettings {
             // TODO: these values should come from the settings of the BluOS device itself
             DeviceSettingKind::VolumeTrim => (DB_STEP_RESOLUTION, -10.0, 10.0),
             DeviceSettingKind::VolumeLevel => (VOLUME_LEVEL_RESOLUTION, 0.0, 100.0),
+            DeviceSettingKind::Distance => (DISTANCE_STEP_RESOLUTION, DISTANCE_MIN, DISTANCE_MAX),
             _ => return,
         };
         let current = match kind {
@@ -203,6 +211,7 @@ impl DeviceSettings {
             DeviceSettingKind::CenterTrim => self.center_trim.unwrap_or_default(),
             DeviceSettingKind::VolumeTrim => self.volume_trim.unwrap_or_default(),
             DeviceSettingKind::VolumeLevel => self.volume_level.unwrap_or_default() as f64,
+            DeviceSettingKind::Distance => self.distance.unwrap_or_default(),
             _ => unreachable!(),
         };
         let delta = step as f64 * step_resolution;
@@ -213,6 +222,7 @@ impl DeviceSettings {
             DeviceSettingKind::CenterTrim => self.center_trim = Some(new),
             DeviceSettingKind::VolumeTrim => self.volume_trim = Some(new),
             DeviceSettingKind::VolumeLevel => self.volume_level = Some(new as u8),
+            DeviceSettingKind::Distance => self.distance = Some(new),
             _ => unreachable!(),
         }
     }
@@ -248,6 +258,9 @@ impl DeviceSettings {
             }
             DeviceSettingKind::CenterTrim => {
                 self.center_trim = self.center_trim.map(|_| None).unwrap_or(Some(0.0));
+            }
+            DeviceSettingKind::Distance => {
+                self.distance = self.distance.map(|_| None).unwrap_or_default()
             }
             _ => {}
         }
@@ -303,6 +316,10 @@ impl DeviceSettings {
             },
             DeviceSettingKind::Virtualizer => match self.virtualizer {
                 Some(v) => v.to_string().fg(stylesheet.text_color),
+                None => unset_text,
+            },
+            DeviceSettingKind::Distance => match self.distance {
+                Some(v) => format!("{v:.1} meter").fg(stylesheet.text_color),
                 None => unset_text,
             },
         }
@@ -378,6 +395,7 @@ impl DeviceSetting {
             DeviceSettingKind::SurroundUpmixer => "Surround upmixer",
             DeviceSettingKind::VolumeLeveler => "Volume leveler",
             DeviceSettingKind::Virtualizer => "Virtualizer",
+            DeviceSettingKind::Distance => "Distance",
         }
     }
 }
@@ -395,6 +413,7 @@ enum DeviceSettingKind {
     SurroundUpmixer,
     VolumeLeveler,
     Virtualizer,
+    Distance,
 }
 
 impl DeviceSettingKind {
@@ -471,6 +490,7 @@ impl NewOrEditProfileDialog {
                     volume_leveler: p.master.volume_leveler,
                     virtualizer: p.master.virtualizer,
                     volume_trim: None,
+                    distance: None,
                 });
                 for slave in p.slaves {
                     dialog.selected_devices_for_group.push(DeviceSettings {
@@ -486,6 +506,7 @@ impl NewOrEditProfileDialog {
                         volume_leveler: slave.volume_leveler,
                         virtualizer: slave.virtualizer,
                         volume_trim: None,
+                        distance: None,
                     });
                 }
                 apply_source(&mut dialog, p.source);
@@ -507,6 +528,7 @@ impl NewOrEditProfileDialog {
                     volume_leveler: p.volume_leveler,
                     virtualizer: p.virtualizer,
                     volume_trim: None,
+                    distance: None,
                 });
                 for slave in p.slaves {
                     dialog.selected_devices_for_group.push(DeviceSettings {
@@ -522,8 +544,61 @@ impl NewOrEditProfileDialog {
                         surround_upmixer: None,
                         volume_leveler: None,
                         virtualizer: None,
+                        distance: None,
                     });
                 }
+                apply_source(&mut dialog, p.source);
+            }
+            Profile::HomeTheaterGroup(p) => {
+                dialog.group_name_input =
+                    TextFieldState::with_value(p.group_name.clone().unwrap_or_default());
+                dialog.selected_profile_type = ProfileType::HomeTheaterGroup;
+                dialog.selected_devices_for_group.push(DeviceSettings {
+                    device_id: p.master,
+                    volume_level: p.volume_level,
+                    led_brightness: p.led_brightness,
+                    node_name: p.node_name,
+                    audio_preset: p.audio_preset,
+                    treble_eq: p.treble_eq,
+                    bass_eq: p.bass_eq,
+                    center_trim: p.center_trim,
+                    surround_upmixer: p.surround_upmixer,
+                    volume_leveler: p.volume_leveler,
+                    virtualizer: p.virtualizer,
+                    volume_trim: None,
+                    distance: Some(p.distance),
+                });
+                dialog.selected_devices_for_group.push(DeviceSettings {
+                    device_id: p.side_left.device_id,
+                    node_name: Some(p.side_left.node_name),
+                    volume_trim: p.side_left.volume_trim,
+                    led_brightness: p.side_left.led_brightness,
+                    volume_level: None,
+                    audio_preset: None,
+                    treble_eq: None,
+                    bass_eq: None,
+                    center_trim: None,
+                    surround_upmixer: None,
+                    volume_leveler: None,
+                    virtualizer: None,
+                    distance: Some(p.side_left.distance),
+                });
+                dialog.selected_devices_for_group.push(DeviceSettings {
+                    device_id: p.side_right.device_id,
+                    node_name: Some(p.side_right.node_name),
+                    volume_trim: p.side_right.volume_trim,
+                    led_brightness: p.side_right.led_brightness,
+                    volume_level: None,
+                    audio_preset: None,
+                    treble_eq: None,
+                    bass_eq: None,
+                    center_trim: None,
+                    surround_upmixer: None,
+                    volume_leveler: None,
+                    virtualizer: None,
+                    distance: Some(p.side_right.distance),
+                });
+
                 apply_source(&mut dialog, p.source);
             }
         }
@@ -536,20 +611,29 @@ impl NewOrEditProfileDialog {
     }
 
     fn device_role(&self, device_id: &DeviceId) -> DeviceRole {
-        match self
-            .selected_devices_for_group
-            .iter()
-            .position(|d| d.device_id == *device_id)
-        {
-            Some(0) if self.selected_profile_type.is_group() => DeviceRole::Master,
-            Some(_) => DeviceRole::Slave,
-            None => DeviceRole::None,
+        match (
+            self.selected_profile_type,
+            self.selected_devices_for_group
+                .iter()
+                .position(|d| d.device_id == *device_id),
+        ) {
+            (ProfileType::HomeTheaterGroup, Some(0)) => DeviceRole::Front,
+            (ProfileType::HomeTheaterGroup, Some(1)) => DeviceRole::SideLeft,
+            (ProfileType::HomeTheaterGroup, Some(2)) => DeviceRole::SideRight,
+            (ProfileType::HomeTheaterGroup, Some(_)) => DeviceRole::None,
+            (ProfileType::NormalGroup | ProfileType::MultiplayerGroup, Some(0)) => {
+                DeviceRole::Master
+            }
+            (ProfileType::NormalGroup | ProfileType::MultiplayerGroup, Some(_)) => {
+                DeviceRole::Slave
+            }
+            _ => DeviceRole::None,
         }
     }
 
     fn device_settings(&self, device_id: &DeviceId, state: &AppState) -> Vec<DeviceSetting> {
         let profile_settings = match self.selected_profile_type {
-            ProfileType::MultiplayerGroup | ProfileType::HomeTheaterGroup
+            ProfileType::MultiplayerGroup
                 if self
                     .selected_devices_for_group
                     .first()
@@ -568,10 +652,36 @@ impl NewOrEditProfileDialog {
                     DeviceSettingKind::Virtualizer.optional(),
                 ]
             }
-            ProfileType::MultiplayerGroup | ProfileType::HomeTheaterGroup => vec![
+            ProfileType::MultiplayerGroup => vec![
                 DeviceSettingKind::NodeName.required(),
                 DeviceSettingKind::VolumeTrim.optional(),
                 DeviceSettingKind::LedBrightness.optional(),
+            ],
+            ProfileType::HomeTheaterGroup
+                if self
+                    .selected_devices_for_group
+                    .first()
+                    .is_some_and(|d| d.device_id == *device_id) =>
+            {
+                vec![
+                    DeviceSettingKind::VolumeLevel.optional(),
+                    DeviceSettingKind::LedBrightness.optional(),
+                    DeviceSettingKind::NodeName.optional(),
+                    DeviceSettingKind::AudioPreset.optional(),
+                    DeviceSettingKind::TrebleEq.optional(),
+                    DeviceSettingKind::BassEq.optional(),
+                    DeviceSettingKind::CenterTrim.optional(),
+                    DeviceSettingKind::SurroundUpmixer.optional(),
+                    DeviceSettingKind::VolumeLeveler.optional(),
+                    DeviceSettingKind::Virtualizer.optional(),
+                    DeviceSettingKind::Distance.required(),
+                ]
+            }
+            ProfileType::HomeTheaterGroup => vec![
+                DeviceSettingKind::NodeName.required(),
+                DeviceSettingKind::VolumeTrim.optional(),
+                DeviceSettingKind::LedBrightness.optional(),
+                DeviceSettingKind::Distance.required(),
             ],
             ProfileType::SingleDevice | ProfileType::NormalGroup => vec![
                 DeviceSettingKind::VolumeLevel.optional(),
@@ -624,31 +734,14 @@ impl NewOrEditProfileDialog {
     }
 
     fn device_selection_block_reason(&self, state: &AppState) -> Option<String> {
-        if self.selected_profile_type.is_group() {
-            if self.selected_devices_for_group.is_empty() {
-                return Some("select a single master device".to_owned());
-            }
-
-            if self.selected_devices_for_group.len() < self.selected_profile_type.min_num_devices()
-            {
-                return Some(format!(
-                    "select min required amount of slaves: {}",
-                    self.selected_profile_type
-                        .min_num_devices()
-                        .saturating_sub(1),
-                ));
-            }
-        } else {
-            if self.selected_devices_for_group.len() < self.selected_profile_type.min_num_devices()
-            {
-                return Some(format!(
-                    "select min required amount of devices: {}",
-                    self.selected_profile_type.min_num_devices(),
-                ));
-            }
+        if self.selected_devices_for_group.len() < self.selected_profile_type.min_num_devices() {
+            return Some(format!(
+                "select min required amount of devices: {}",
+                self.selected_profile_type.min_num_devices(),
+            ));
         }
 
-        if self.selected_profile_type.is_zone_group() {
+        if self.selected_profile_type.is_multiplayer_group() {
             if !self
                 .selected_devices_for_group
                 .first()
@@ -668,6 +761,39 @@ impl NewOrEditProfileDialog {
                     .is_some_and(|o| o.is_slave_capable())
             }) {
                 return Some("all slaves must be slave-capable devices".to_owned());
+            }
+        }
+
+        if self.selected_profile_type.is_home_theater_group() {
+            let mut devices = self.selected_devices_for_group.iter();
+            if !devices
+                .next()
+                .and_then(|d| state.find_device(&d.device_id))
+                .and_then(|d| d.group_status.as_ref())
+                .and_then(|s| s.zone_options.as_ref())
+                .is_some_and(|o| o.is_front_capable())
+            {
+                return Some("selected master device is not front capable".to_owned());
+            }
+
+            if !devices
+                .next()
+                .and_then(|d| state.find_device(&d.device_id))
+                .and_then(|d| d.group_status.as_ref())
+                .and_then(|s| s.zone_options.as_ref())
+                .is_some_and(|o| o.is_side_left_capable())
+            {
+                return Some("selected slave device is not side left capable".to_owned());
+            }
+
+            if !devices
+                .next()
+                .and_then(|d| state.find_device(&d.device_id))
+                .and_then(|d| d.group_status.as_ref())
+                .and_then(|s| s.zone_options.as_ref())
+                .is_some_and(|o| o.is_side_left_capable())
+            {
+                return Some("selected slave device is not side right capable".to_owned());
             }
         }
 
@@ -942,24 +1068,69 @@ impl NewOrEditProfileDialog {
 
                     let mut line = vec![match self.device_role(device_id) {
                         DeviceRole::Master => "MASTER ".fg(ctx.stylesheet.highlight_color).bold(),
+                        DeviceRole::Front => "FRONT ".fg(ctx.stylesheet.highlight_color).bold(),
+                        DeviceRole::SideLeft => {
+                            "SIDE LEFT ".fg(ctx.stylesheet.highlight_color_dark).bold()
+                        }
+                        DeviceRole::SideRight => {
+                            "SIDE RIGHT ".fg(ctx.stylesheet.highlight_color_dark).bold()
+                        }
                         DeviceRole::Slave => "☑ ".fg(ctx.stylesheet.text_color).bold(),
                         DeviceRole::None => "☐ ".fg(ctx.stylesheet.text_color_sub).bold(),
                     }];
                     line.push(device_name.fg(ctx.stylesheet.text_color));
                     line.push(format!(" ({device_model})").fg(ctx.stylesheet.text_color_sub));
-                    if self.selected_profile_type.is_zone_group() {
+                    if self.selected_profile_type.is_multiplayer_group() {
                         let (is_master_capable, is_slave_capable) = group_status
                             .as_ref()
                             .and_then(|s| s.zone_options.as_ref())
                             .map(|o| (o.is_master_capable(), o.is_slave_capable()))
                             .unwrap_or_default();
-                        let capabilities = match (is_master_capable, is_slave_capable) {
-                            (false, false) => String::new(),
-                            (false, true) => " [S]".to_string(),
-                            (true, false) => " [M]".to_string(),
-                            (true, true) => " [M/S]".to_string(),
-                        };
-                        line.push(capabilities.fg(ctx.stylesheet.highlight_color).bold());
+                        let mut capabilities = Vec::new();
+                        if is_master_capable {
+                            capabilities.push('M');
+                        }
+                        if is_slave_capable {
+                            capabilities.push('S');
+                        }
+                        if !capabilities.is_empty() {
+                            line.push(
+                                format!(" [{}]", capabilities.iter().join("/"))
+                                    .fg(ctx.stylesheet.highlight_color)
+                                    .bold(),
+                            );
+                        }
+                    }
+                    if self.selected_profile_type.is_home_theater_group() {
+                        let (is_front_capable, is_side_left_capable, is_side_right_capable) =
+                            group_status
+                                .as_ref()
+                                .and_then(|s| s.zone_options.as_ref())
+                                .map(|o| {
+                                    (
+                                        o.is_front_capable(),
+                                        o.is_side_left_capable(),
+                                        o.is_side_right_capable(),
+                                    )
+                                })
+                                .unwrap_or_default();
+                        let mut capabilities = Vec::new();
+                        if is_front_capable {
+                            capabilities.push('F');
+                        }
+                        if is_side_left_capable {
+                            capabilities.push('L');
+                        }
+                        if is_side_right_capable {
+                            capabilities.push('R');
+                        }
+                        if !capabilities.is_empty() {
+                            line.push(
+                                format!(" [{}]", capabilities.iter().join("/"))
+                                    .fg(ctx.stylesheet.highlight_color)
+                                    .bold(),
+                            );
+                        }
                     }
                     if group_status.as_ref().is_some_and(|s| s.am_i_grouped()) {
                         line.push(" — ".fg(ctx.stylesheet.text_color_sub));
@@ -1437,7 +1608,10 @@ impl DialogComponent for NewOrEditProfileDialog {
                         .iter()
                         .position(|d| d.device_id == device_id)
                     {
-                        if self.device_role(&device_id) == DeviceRole::Master {
+                        if matches!(
+                            self.device_role(&device_id),
+                            DeviceRole::Master | DeviceRole::Front
+                        ) {
                             self.selected_devices_for_group.clear();
                         } else {
                             self.selected_devices_for_group.remove(index);
@@ -1445,8 +1619,8 @@ impl DialogComponent for NewOrEditProfileDialog {
                     } else if self.selected_devices_for_group.len()
                         < self.selected_profile_type.max_num_devices()
                     {
-                        if self.selected_profile_type.is_zone_group() {
-                            // For zone groups the first selected device becomes the master, the rest become slaves
+                        if self.selected_profile_type.is_multiplayer_group() {
+                            // For multiplayer groups the first selected device becomes the master, the rest become slaves
                             let (is_master_capable, is_slave_capable) = state
                                 .find_device(&device_id)
                                 .and_then(|d| d.group_status.as_ref())
@@ -1462,6 +1636,30 @@ impl DialogComponent for NewOrEditProfileDialog {
                                 }
                             } else if is_slave_capable {
                                 // Other devices must be slave capable
+                                self.selected_devices_for_group
+                                    .push(DeviceSettings::new(device_id));
+                            }
+                        } else if self.selected_profile_type.is_home_theater_group() {
+                            // For multiplayer groups the first selected device becomes the master, the rest become slaves
+                            let (is_front_capable, is_side_left_capable, is_side_right_capable) =
+                                state
+                                    .find_device(&device_id)
+                                    .and_then(|d| d.group_status.as_ref())
+                                    .and_then(|s| s.zone_options.as_ref())
+                                    .map(|o| {
+                                        (
+                                            o.is_front_capable(),
+                                            o.is_side_left_capable(),
+                                            o.is_side_right_capable(),
+                                        )
+                                    })
+                                    .unwrap_or_default();
+                            if match self.selected_devices_for_group.len() {
+                                0 if is_front_capable => true,
+                                1 if is_side_left_capable => true,
+                                2 if is_side_right_capable => true,
+                                _ => false,
+                            } {
                                 self.selected_devices_for_group
                                     .push(DeviceSettings::new(device_id));
                             }
@@ -1664,7 +1862,9 @@ impl DialogComponent for NewOrEditProfileDialog {
             }
             (WizardStep::SelectSourceInput, KeyCode::Enter) => {
                 if self.source_selection_block_reason().is_none() {
-                    self.step = if self.selected_profile_type.is_zone_group() {
+                    self.step = if self.selected_profile_type.is_home_theater_group()
+                        || self.selected_profile_type.is_multiplayer_group()
+                    {
                         WizardStep::ChooseGroupName
                     } else {
                         WizardStep::ChooseProfileName

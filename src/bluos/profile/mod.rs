@@ -2,10 +2,12 @@ mod common;
 mod control;
 mod device_profile;
 mod group_profile;
+mod home_theater_group_profile;
 mod multiplayer_group_profile;
 
 pub use common::SourceSelection;
 pub use control::{Profile, ProfileController};
 pub use device_profile::DeviceProfile;
 pub use group_profile::{GroupProfile, GroupProfileDevice};
+pub use home_theater_group_profile::{HomeTheaterGroupProfile, HomeTheaterGroupProfileSlave};
 pub use multiplayer_group_profile::{MultiplayerGroupProfile, MultiplayerGroupProfileSlave};

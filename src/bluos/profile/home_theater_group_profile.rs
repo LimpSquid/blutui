@@ -1,0 +1,461 @@
+use std::time::{Duration, Instant};
+
+use anyhow::Context;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
+use strum::IntoEnumIterator;
+
+use super::super::client::ZoneMode;
+use super::common::*;
+use crate::bluos::{
+    AudioPreset, DISTANCE_MAX, DISTANCE_MIN, LedBrightness, SettingState, VOLUME_LEVEL_MAX,
+    VOLUME_LEVEL_MIN, ZoneChannel,
+};
+use crate::types::DeviceId;
+
+#[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum State {
+    #[default]
+    Check,
+    UngroupSlaves,
+    UngroupMasters,
+    WaitForDevices,
+    CheckCapabilities,
+    RenameSlaves,
+    Group,
+    GroupWait,
+    ConfigureSlaves,
+    ConfigureMaster,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HomeTheaterGroupProfileSlave {
+    pub device_id: DeviceId,
+    pub node_name: String,
+    /// Volume trim in dB
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_trim: Option<f64>,
+    /// Led brightness, if `None` use the current brightness
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub led_brightness: Option<LedBrightness>,
+    /// The distance of the device to the user (in meters)
+    pub distance: f64,
+}
+
+impl HomeTheaterGroupProfileSlave {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_name(&self.node_name)?;
+
+        if let Some(led_brightness) = self.led_brightness {
+            anyhow::ensure!(
+                (DISTANCE_MIN..=DISTANCE_MAX).contains(&&self.distance),
+                "invalid distance (allowed: {DISTANCE_MIN} - {DISTANCE_MAX})"
+            );
+
+            anyhow::ensure!(
+                led_brightness != LedBrightness::Unknown,
+                "led brightness invalid, must be one of: {}",
+                LedBrightness::iter().map(|v| v.to_string()).join(", ")
+            );
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HomeTheaterGroupProfile {
+    /// The master device, must be front channel capable
+    pub master: DeviceId,
+    /// The distance of the device to the user (in meters)
+    pub distance: f64,
+    /// Volume level 0 - 100, if `None` use the current level
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_level: Option<u8>,
+    /// Node name, if `None` use the current name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_name: Option<String>,
+    /// Audio preset, if `None` use the current audio preset value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_preset: Option<AudioPreset>,
+    /// Treble equalizer offset, if `None` use the current treble equalizer offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub treble_eq: Option<f64>,
+    /// Bass equalizer offset, if `None` use the current bass equalizer offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bass_eq: Option<f64>,
+    /// Center trim offset, if `None` use the current center trim offset.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub center_trim: Option<f64>,
+    /// Surround upmixer, if `None` use the current surround upmixer value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surround_upmixer: Option<SettingState>,
+    /// Virtualizer, if `None` use the current virtualizer value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub virtualizer: Option<SettingState>,
+    /// Volume leveler, if `None` use the current volume leveler value.
+    /// NB: this settings is not available on all devices
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_leveler: Option<SettingState>,
+    /// Led brightness, if `None` use the current brightness
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub led_brightness: Option<LedBrightness>,
+    /// The source selection of this group, if `None` use the current source selection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceSelection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_name: Option<String>,
+    pub side_left: HomeTheaterGroupProfileSlave,
+    pub side_right: HomeTheaterGroupProfileSlave,
+    /// Extra devices to ungroup. In certain cases we cannot determine
+    /// which devices need to be ungrouped to form the new group specified
+    /// by this profile. For example a device that is currently part of a
+    /// fixed group and acts as secondary device called a zone slave. A zone
+    /// slave does not announce itself, lives in its own network formed by the
+    /// master and the master does not announce the device ID of the zone slave
+    /// itself. In order to make one of the zone slaves available for the profile
+    /// that is about to be applied, the master of the fixed group needs to be
+    /// ungrouped. Note that you do not need to specify the zone master of a fixed
+    /// group. A zone master does still announce itself, if the zone master needs
+    /// to be part of the group formed by this profile, it will automatically be
+    /// ungrouped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ungroup_extra: Option<Vec<DeviceId>>,
+}
+
+impl HomeTheaterGroupProfile {
+    fn slaves(&self) -> [&HomeTheaterGroupProfileSlave; 2] {
+        [&self.side_left, &self.side_right]
+    }
+
+    fn device_ids(&self) -> impl Iterator<Item = DeviceId> {
+        self.slaves()
+            .into_iter()
+            .map(|s| s.device_id)
+            .chain(std::iter::once(self.master))
+            .chain(self.ungroup_extra.iter().flatten().copied())
+    }
+}
+
+impl Profile for HomeTheaterGroupProfile {
+    fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (DISTANCE_MIN..=DISTANCE_MAX).contains(&&self.distance),
+            "invalid distance (allowed: {DISTANCE_MIN} - {DISTANCE_MAX})"
+        );
+
+        anyhow::ensure!(
+            (VOLUME_LEVEL_MIN..=VOLUME_LEVEL_MAX).contains(&self.volume_level.unwrap_or(0)),
+            "invalid volume level (allowed: {VOLUME_LEVEL_MIN} - {VOLUME_LEVEL_MAX})"
+        );
+
+        anyhow::ensure!(
+            !self.slaves().is_empty(),
+            "at least one slave needs to be specified"
+        );
+
+        anyhow::ensure!(
+            !self
+                .slaves()
+                .iter()
+                .map(|s| s.device_id)
+                .contains(&self.master),
+            "master device is also specified in slaves"
+        );
+
+        anyhow::ensure!(
+            self.slaves().iter().map(|s| s.device_id).unique().count() == self.slaves().len(),
+            "duplicate slave specified"
+        );
+
+        anyhow::ensure!(
+            self.slaves()
+                .iter()
+                .map(|s| s.node_name.as_str())
+                .unique()
+                .count()
+                == self.slaves().len(),
+            "duplicate slave node name specified"
+        );
+
+        self.slaves()
+            .into_iter()
+            .try_for_each(HomeTheaterGroupProfileSlave::validate)?;
+
+        if let Some(node_name) = self.node_name.as_deref() {
+            validate_name(node_name)?;
+        }
+        if let Some(group_name) = self.group_name.as_deref() {
+            validate_name(group_name)?;
+        }
+        if let Some(led_brightness) = self.led_brightness {
+            anyhow::ensure!(
+                led_brightness != LedBrightness::Unknown,
+                "led brightness invalid, must be one of: {}",
+                LedBrightness::iter().map(|v| v.to_string()).join(", ")
+            );
+        }
+        if let Some(audio_preset) = self.audio_preset {
+            anyhow::ensure!(
+                audio_preset != AudioPreset::Unknown,
+                "audio preset invalid, must be one of: {}",
+                AudioPreset::iter().map(|v| v.to_string()).join(", ")
+            );
+        }
+        if let Some(source) = self.source.as_ref() {
+            source.validate()?;
+        }
+
+        Ok(())
+    }
+
+    #[tracing::instrument(err, skip_all)]
+    async fn apply(self, clients: SharedClientMap) -> anyhow::Result<()> {
+        self.run(clients).await
+    }
+}
+
+impl StateMachine for HomeTheaterGroupProfile {
+    type State = State;
+
+    async fn run_state(
+        &self,
+        state: &Self::State,
+        facts: &FactMap,
+        clients: &ClientMap,
+        transition_time_point: Instant,
+    ) -> anyhow::Result<NextState<Self::State>> {
+        match state {
+            State::Check => match try_find_facts_by_id(facts, &self.master) {
+                Ok(facts)
+                    if facts.group_status.slave.is_empty()
+                        && facts.group_status.zone_slave.len() == self.slaves().len()
+                        && self.slaves().iter().all(|s| {
+                            facts
+                                .group_status
+                                .zone_slave
+                                .iter()
+                                .find(|zs| {
+                                    zs.name.as_deref().is_some_and(|name| name == s.node_name)
+                                })
+                                .is_some()
+                        }) =>
+                {
+                    Ok(NextState::Immediate(State::ConfigureSlaves))
+                }
+                _ => Ok(NextState::Immediate(State::UngroupSlaves)),
+            },
+            State::UngroupSlaves => {
+                ungroup_slaves_from_master(self.device_ids(), facts, clients).await?;
+
+                Ok(NextState::After(
+                    Duration::from_secs(1),
+                    State::UngroupMasters,
+                ))
+            }
+            State::UngroupMasters => {
+                ungroup_masters(self.device_ids(), facts, clients).await?;
+
+                Ok(NextState::Immediate(State::WaitForDevices))
+            }
+            State::WaitForDevices => {
+                let not_found: Vec<_> = self
+                    .slaves()
+                    .iter()
+                    .map(|s| &s.device_id)
+                    .chain(std::iter::once(&self.master))
+                    // Wait until device is reachable
+                    .filter(|device_id| try_find_facts_by_id(facts, device_id).is_err())
+                    .collect();
+
+                if not_found.is_empty() {
+                    Ok(NextState::Immediate(State::CheckCapabilities))
+                } else {
+                    anyhow::ensure!(
+                        transition_time_point.elapsed() < Duration::from_secs(90),
+                        "timeout waiting on devices to become available, not found: {}",
+                        not_found.into_iter().join(", ")
+                    );
+
+                    Ok(NextState::After(
+                        Duration::from_secs(5),
+                        State::WaitForDevices,
+                    ))
+                }
+            }
+            State::CheckCapabilities => {
+                anyhow::ensure!(
+                    try_find_facts_by_id(facts, &self.master)?
+                        .group_status
+                        .zone_options
+                        .as_ref()
+                        .is_some_and(|o| o.option.iter().any(|o| o.channel.can_be_front())),
+                    "'{}' cannot be used as front speaker",
+                    self.master
+                );
+                anyhow::ensure!(
+                    try_find_facts_by_id(facts, &self.side_left.device_id)?
+                        .group_status
+                        .zone_options
+                        .as_ref()
+                        .is_some_and(|o| o.option.iter().any(|o| o.channel.can_be_side_left())),
+                    "'{}' cannot be used as side left speaker",
+                    self.side_left.device_id
+                );
+                anyhow::ensure!(
+                    try_find_facts_by_id(facts, &self.side_right.device_id)?
+                        .group_status
+                        .zone_options
+                        .as_ref()
+                        .is_some_and(|o| o.option.iter().any(|o| o.channel.can_be_side_left())),
+                    "'{}' cannot be used as side right speaker",
+                    self.side_right.device_id
+                );
+
+                Ok(NextState::Immediate(State::RenameSlaves))
+            }
+            State::RenameSlaves => {
+                for slave in &self.slaves() {
+                    try_find_client_by_id(clients, &slave.device_id)?
+                        .set_node_name(&slave.node_name)
+                        .await?;
+                }
+
+                Ok(NextState::Immediate(State::Group))
+            }
+            State::Group => {
+                try_find_client_by_id(clients, &self.master)?
+                    .add_slaves(
+                        &[
+                            // Order must match with zone opts
+                            try_find_client_by_id(clients, &self.side_left.device_id)?
+                                .ip_and_port(),
+                            try_find_client_by_id(clients, &self.side_right.device_id)?
+                                .ip_and_port(),
+                        ],
+                        ZoneMode::HomeTheaterGroup {
+                            group_name: self.group_name.clone(),
+                            channel_mode: ZoneChannel::Front,
+                            distance: self.distance,
+                            zone_opts: vec![
+                                (ZoneChannel::SideLeft, self.side_left.distance),
+                                (ZoneChannel::SideRight, self.side_right.distance),
+                            ],
+                        },
+                    )
+                    .await?;
+
+                Ok(NextState::Immediate(State::GroupWait))
+            }
+            State::GroupWait => {
+                let facts = try_find_facts_by_id(facts, &self.master)?;
+
+                if self.slaves().iter().all(|s| {
+                    facts
+                        .group_status
+                        .zone_slave
+                        .iter()
+                        .find(|zs| zs.name.as_deref().is_some_and(|name| name == s.node_name))
+                        .is_some()
+                }) {
+                    Ok(NextState::Immediate(State::ConfigureSlaves))
+                } else {
+                    anyhow::ensure!(
+                        transition_time_point.elapsed() < Duration::from_secs(30),
+                        "timeout waiting on zone slaves to become available"
+                    );
+
+                    Ok(NextState::After(Duration::from_secs(5), State::GroupWait))
+                }
+            }
+            State::ConfigureSlaves => {
+                let client = try_find_client_by_id(clients, &self.master)?;
+                let facts = try_find_facts_by_id(facts, &self.master)?;
+
+                for profile in self.slaves().iter() {
+                    let zone_slave = facts
+                        .group_status
+                        .zone_slave
+                        .iter()
+                        .find(|zs| {
+                            zs.name
+                                .as_deref()
+                                .is_some_and(|name| name == profile.node_name)
+                        })
+                        .context(format!(
+                            "zone slave not found in group: {}",
+                            profile.node_name
+                        ))?;
+
+                    if let Some(volume_trim) = profile.volume_trim {
+                        client
+                            .set_zone_slave_volume(
+                                (zone_slave.ip_addr, *zone_slave.port),
+                                volume_trim,
+                            )
+                            .await?;
+                    }
+                    if let Some(brightness) = profile.led_brightness {
+                        client
+                            .set_zone_slave_led_brightness(
+                                (zone_slave.ip_addr, *zone_slave.port),
+                                brightness,
+                            )
+                            .await?;
+                    }
+                }
+
+                Ok(NextState::Immediate(State::ConfigureMaster))
+            }
+            State::ConfigureMaster => {
+                let client = try_find_client_by_id(clients, &self.master)?;
+
+                if let Some(volume_level) = self.volume_level {
+                    client.set_volume_level(volume_level, false).await?;
+                }
+                if let Some(node_name) = self.node_name.as_deref() {
+                    client.set_node_name(node_name).await?;
+                }
+                if let Some(group_name) = self.group_name.as_deref() {
+                    client.set_zone_name(group_name).await?;
+                }
+                if let Some(brightness) = self.led_brightness {
+                    client.set_led_brightness(brightness).await?;
+                }
+                // NB: Apply input source before audio preset
+                if let Some(source) = self.source.as_ref() {
+                    source.apply(clients, facts, &self.master).await?;
+                }
+                if let Some(db) = self.treble_eq {
+                    client.set_equalizer_treble(db).await?;
+                }
+                if let Some(db) = self.bass_eq {
+                    client.set_equalizer_bass(db).await?;
+                }
+                if let Some(db) = self.center_trim {
+                    client.set_equalizer_center_trim(db).await?;
+                }
+                if let Some(state) = self.surround_upmixer {
+                    client.set_equalizer_upmixer(state).await?;
+                }
+                if let Some(state) = self.virtualizer {
+                    client.set_equalizer_virtualizer(state).await?;
+                }
+                if let Some(state) = self.volume_leveler {
+                    client.set_equalizer_volume_leveler(state).await?;
+                }
+                if let Some(audio_preset) = self.audio_preset {
+                    client.set_audio_preset(audio_preset).await?;
+                }
+
+                Ok(NextState::Finished)
+            }
+        }
+    }
+}

@@ -7,7 +7,7 @@ use strum::IntoEnumIterator;
 
 use super::super::client::ZoneMode;
 use super::common::*;
-use crate::bluos::{AudioPreset, LedBrightness, MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL, SettingState};
+use crate::bluos::{AudioPreset, LedBrightness, SettingState, VOLUME_LEVEL_MAX, VOLUME_LEVEL_MIN};
 use crate::types::DeviceId;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -55,6 +55,7 @@ impl MultiplayerGroupProfileSlave {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MultiplayerGroupProfile {
+    /// The master device
     pub master: DeviceId,
     /// Volume level 0 - 100, if `None` use the current level
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -128,18 +129,14 @@ impl MultiplayerGroupProfile {
 impl Profile for MultiplayerGroupProfile {
     fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            (MIN_VOLUME_LEVEL..=MAX_VOLUME_LEVEL).contains(&self.volume_level.unwrap_or(0)),
-            "invalid volume level (allowed: {MIN_VOLUME_LEVEL} - {MAX_VOLUME_LEVEL})"
+            (VOLUME_LEVEL_MIN..=VOLUME_LEVEL_MAX).contains(&self.volume_level.unwrap_or(0)),
+            "invalid volume level (allowed: {VOLUME_LEVEL_MIN} - {VOLUME_LEVEL_MAX})"
         );
 
         anyhow::ensure!(
             !self.slaves.is_empty(),
             "at least one slave needs to be specified"
         );
-
-        self.slaves
-            .iter()
-            .try_for_each(MultiplayerGroupProfileSlave::validate)?;
 
         anyhow::ensure!(
             !self
@@ -164,6 +161,10 @@ impl Profile for MultiplayerGroupProfile {
                 == self.slaves.len(),
             "duplicate slave node name specified"
         );
+
+        self.slaves
+            .iter()
+            .try_for_each(MultiplayerGroupProfileSlave::validate)?;
 
         if let Some(node_name) = self.node_name.as_deref() {
             validate_name(node_name)?;
@@ -363,7 +364,7 @@ impl StateMachine for MultiplayerGroupProfile {
 
                     if let Some(volume_trim) = profile.volume_trim {
                         client
-                            .set_zone_slave_volume_level(
+                            .set_zone_slave_volume(
                                 (zone_slave.ip_addr, *zone_slave.port),
                                 volume_trim,
                             )

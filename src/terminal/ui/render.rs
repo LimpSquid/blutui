@@ -24,7 +24,7 @@ use super::{
 };
 use crate::bluos::profile::{Profile, SourceSelection};
 use crate::bluos::{
-    AudioPreset, DevicePlaybackState, LedBrightness, MAX_VOLUME_LEVEL, SettingState,
+    AudioPreset, DevicePlaybackState, LedBrightness, SettingState, VOLUME_LEVEL_MAX,
 };
 use crate::terminal::app::{AppState, BusyFlags, DeviceState};
 use crate::types::DeviceId;
@@ -628,6 +628,9 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         Profile::MultiplayerGroup(p) => {
             (Some(p.master), p.source.as_ref(), p.group_name.as_deref())
         }
+        Profile::HomeTheaterGroup(p) => {
+            (Some(p.master), p.source.as_ref(), p.group_name.as_deref())
+        }
     };
 
     let device_settings = |volume_level: Option<u8>,
@@ -640,7 +643,8 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                            center_trim: Option<f64>,
                            surround_upmixer: Option<SettingState>,
                            volume_leveler: Option<SettingState>,
-                           virtualizer: Option<SettingState>|
+                           virtualizer: Option<SettingState>,
+                           distance: Option<f64>|
      -> Vec<(&'static str, Option<String>)> {
         let mut settings = Vec::new();
         if let Some(v) = node_name {
@@ -676,6 +680,9 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         if let Some(v) = virtualizer {
             settings.push(("virtualizer", Some(v.to_string())));
         }
+        if let Some(v) = distance {
+            settings.push(("distance", Some(format!("{v:.1} meter"))));
+        }
 
         settings
     };
@@ -699,6 +706,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     p.surround_upmixer,
                     p.volume_leveler,
                     p.virtualizer,
+                    None,
                 ),
             });
         }
@@ -718,6 +726,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     p.master.surround_upmixer,
                     p.master.volume_leveler,
                     p.master.virtualizer,
+                    None,
                 ),
             });
             for slave in p.slaves.iter() {
@@ -736,6 +745,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                         slave.surround_upmixer,
                         slave.volume_leveler,
                         slave.virtualizer,
+                        None,
                     ),
                 });
             }
@@ -756,6 +766,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     p.surround_upmixer,
                     p.volume_leveler,
                     p.virtualizer,
+                    None,
                 ),
             });
             for slave in p.slaves.iter() {
@@ -774,9 +785,66 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                         None,
                         None,
                         None,
+                        None,
                     ),
                 });
             }
+        }
+        Profile::HomeTheaterGroup(p) => {
+            rows.push(Row {
+                role: Some("master (front)"),
+                device_id: p.master,
+                settings: device_settings(
+                    p.volume_level,
+                    None,
+                    p.led_brightness,
+                    p.node_name.as_deref(),
+                    p.audio_preset,
+                    p.treble_eq,
+                    p.bass_eq,
+                    p.center_trim,
+                    p.surround_upmixer,
+                    p.volume_leveler,
+                    p.virtualizer,
+                    Some(p.distance),
+                ),
+            });
+            rows.push(Row {
+                role: Some("zone slave (side left)"),
+                device_id: p.side_left.device_id,
+                settings: device_settings(
+                    None,
+                    p.side_left.volume_trim,
+                    p.side_left.led_brightness,
+                    Some(p.side_left.node_name.as_str()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(p.distance),
+                ),
+            });
+            rows.push(Row {
+                role: Some("zone slave (side right)"),
+                device_id: p.side_right.device_id,
+                settings: device_settings(
+                    None,
+                    p.side_right.volume_trim,
+                    p.side_right.led_brightness,
+                    Some(p.side_right.node_name.as_str()),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(p.distance),
+                ),
+            });
         }
     }
 
@@ -1049,7 +1117,7 @@ fn render_music_tab(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         )
         .bar_width(1)
         .bar_gap(0)
-        .max(MAX_VOLUME_LEVEL.into());
+        .max(VOLUME_LEVEL_MAX.into());
         ctx.frame.render_widget(volume_chart, volume_area);
 
         let music_area = render_groupbox(ctx, Some("music"), music_area, false);

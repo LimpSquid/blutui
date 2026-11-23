@@ -8,6 +8,7 @@ use super::super::client::HttpClient;
 use super::common::{Profile as _, SharedClientMap};
 use super::device_profile::DeviceProfile;
 use super::group_profile::GroupProfile;
+use super::home_theater_group_profile::HomeTheaterGroupProfile;
 use super::multiplayer_group_profile::MultiplayerGroupProfile;
 use crate::event::{Event, EventBus};
 
@@ -17,6 +18,7 @@ pub enum Profile {
     Device(DeviceProfile),
     Group(GroupProfile),
     MultiplayerGroup(MultiplayerGroupProfile),
+    HomeTheaterGroup(HomeTheaterGroupProfile),
 }
 
 impl Profile {
@@ -26,6 +28,9 @@ impl Profile {
             Self::Group(p) => p.validate().context("group profile invalid")?,
             Self::MultiplayerGroup(p) => {
                 p.validate().context("multiplayer group profile invalid")?
+            }
+            Self::HomeTheaterGroup(p) => {
+                p.validate().context("home-theater group profile invalid")?
             }
         }
 
@@ -40,6 +45,7 @@ impl Profile {
             Self::Device(p) => p.apply(clients).await,
             Self::Group(p) => p.apply(clients).await,
             Self::MultiplayerGroup(p) => p.apply(clients).await,
+            Self::HomeTheaterGroup(p) => p.apply(clients).await,
         }
     }
 }

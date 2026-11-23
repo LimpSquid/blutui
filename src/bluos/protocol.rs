@@ -167,6 +167,18 @@ impl ZoneChannel {
         matches!(self, Self::Front)
     }
 
+    pub fn can_be_front(&self) -> bool {
+        matches!(self, Self::Front)
+    }
+
+    pub fn can_be_side_left(&self) -> bool {
+        matches!(self, Self::SideLeft)
+    }
+
+    pub fn can_be_side_right(&self) -> bool {
+        matches!(self, Self::SideRight)
+    }
+
     pub fn can_be_slave(&self) -> bool {
         matches!(
             self,
@@ -190,6 +202,18 @@ pub struct DeviceZoneOptions {
 impl DeviceZoneOptions {
     pub fn is_master_capable(&self) -> bool {
         self.option.iter().any(|o| o.channel.can_be_master())
+    }
+
+    pub fn is_front_capable(&self) -> bool {
+        self.option.iter().any(|o| o.channel.can_be_front())
+    }
+
+    pub fn is_side_left_capable(&self) -> bool {
+        self.option.iter().any(|o| o.channel.can_be_side_left())
+    }
+
+    pub fn is_side_right_capable(&self) -> bool {
+        self.option.iter().any(|o| o.channel.can_be_side_right())
     }
 
     pub fn is_slave_capable(&self) -> bool {

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 
 use super::super::protocol::{AudioPreset, LedBrightness};
-use super::super::{MAX_VOLUME_LEVEL, MIN_VOLUME_LEVEL};
+use super::super::{VOLUME_LEVEL_MAX, VOLUME_LEVEL_MIN};
 use super::common::*;
 use crate::bluos::SettingState;
 use crate::types::DeviceId;
@@ -58,8 +58,8 @@ pub struct DeviceProfile {
 impl Profile for DeviceProfile {
     fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            (MIN_VOLUME_LEVEL..=MAX_VOLUME_LEVEL).contains(&self.volume_level.unwrap_or(0)),
-            "invalid volume level (allowed: {MIN_VOLUME_LEVEL} - {MAX_VOLUME_LEVEL})"
+            (VOLUME_LEVEL_MIN..=VOLUME_LEVEL_MAX).contains(&self.volume_level.unwrap_or(0)),
+            "invalid volume level (allowed: {VOLUME_LEVEL_MIN} - {VOLUME_LEVEL_MAX})"
         );
 
         if let Some(node_name) = self.node_name.as_deref() {
