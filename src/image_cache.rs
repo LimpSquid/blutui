@@ -226,11 +226,11 @@ impl ImageCache {
                             }
                         }
 
-                        let event = Image {
+                        let image = Image {
                             id: image_id,
                             image,
                         };
-                        event_bus.publish_lossy(Event::ImageFetched(event.into()));
+                        event_bus.publish_lossy(Event::ImageFetched(image));
                     });
 
                     if let Err(error) = worker.await {

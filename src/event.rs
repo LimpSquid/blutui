@@ -30,6 +30,7 @@ pub enum Event {
         DevicePlayerSettings,
         DevicePresets,
     ),
+    ZoneSlaveGroupStatusUpdated(DeviceId, DeviceGroupStatus),
     ProfileTransitionStarted,
     ProfileTransitionCompleted(Arc<anyhow::Result<()>>),
     ProfilesLoaded(Arc<Vec<StoredProfile>>),

@@ -103,8 +103,14 @@ impl From<Device> for DeviceState {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct ZoneSlaveState {
+    pub group_status: Option<DeviceGroupStatus>,
+}
+
 pub struct AppState {
     pub device_state: HashMap<DeviceId, DeviceState>,
+    pub zone_slave_state: HashMap<DeviceId, ZoneSlaveState>,
     pub profiles: HashMap<ProfileId, StoredProfile>,
     pub busy_flags: BusyFlags,
     #[cfg(feature = "ui-enable-image")]
@@ -117,6 +123,7 @@ impl AppState {
     fn new(#[allow(unused)] event_bus: EventBus) -> anyhow::Result<Self> {
         Ok(Self {
             device_state: Default::default(),
+            zone_slave_state: Default::default(),
             profiles: Default::default(),
             busy_flags: BusyFlags::empty(),
             #[cfg(feature = "ui-enable-image")]
@@ -172,6 +179,10 @@ impl AppState {
 
     pub fn find_device(&self, device_id: &DeviceId) -> Option<&DeviceState> {
         self.device_state.get(device_id)
+    }
+
+    pub fn find_zone_slave(&self, device_id: &DeviceId) -> Option<&ZoneSlaveState> {
+        self.zone_slave_state.get(device_id)
     }
 
     pub fn is_device_playing(&self, device_id: &DeviceId) -> bool {
@@ -239,6 +250,7 @@ impl App {
         match event {
             Event::DeviceAnnouncement(device) => {
                 self.device_controller.poll(&device).await?;
+                self.state.zone_slave_state.remove(&device.id);
                 self.state
                     .device_state
                     .entry(device.id)
@@ -288,6 +300,11 @@ impl App {
                     state.player_settings = Some(player_settings);
                     state.presets = Some(presets);
                 }
+            }
+            Event::ZoneSlaveGroupStatusUpdated(slave_id, group_status) => {
+                let state = self.state.zone_slave_state.entry(slave_id).or_default();
+                debug_diff!(~ state.group_status, group_status, "zone slave group status updated");
+                state.group_status = Some(group_status);
             }
             Event::ProfilesLoaded(profiles) => {
                 self.state.profiles = profiles

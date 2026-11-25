@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
@@ -284,6 +285,16 @@ async fn device_group_status_syncer(
             // Handle group status changes
             status = client.get_group_status(poll_opts.clone()) => match status {
                 Ok(status) => {
+                    tokio::spawn(poll_zone_slaves(
+                        event_bus.clone(),
+                        client.clone(),
+                        status
+                            .zone_slave
+                            .iter()
+                            .map(|s| (s.ip_addr, *s.port))
+                            .collect(),
+                    ));
+
                     poll_opts = Some(PollOpts::new(&status.etag));
                     event_bus.publish_lossy(Event::DeviceGroupStatusUpdated(device.id, status));
                 }
@@ -293,6 +304,31 @@ async fn device_group_status_syncer(
                 }
             }
         }
+    }
+}
+
+#[tracing::instrument(skip_all)]
+async fn poll_zone_slaves(
+    event_bus: EventBus,
+    master_client: HttpClient,
+    endpoints: Vec<(IpAddr, u16)>,
+) {
+    for endpoint in endpoints {
+        let Ok(group_status) = master_client
+            .get_zone_slave_group_status(endpoint, None)
+            .await
+        else {
+            continue;
+        };
+        let Some(Ok(zone_slave_id)) = group_status.mac_address.as_deref().map(DeviceId::from_mac)
+        else {
+            continue;
+        };
+
+        event_bus.publish_lossy(Event::ZoneSlaveGroupStatusUpdated(
+            zone_slave_id,
+            group_status,
+        ));
     }
 }
 

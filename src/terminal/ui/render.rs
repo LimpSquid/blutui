@@ -914,7 +914,12 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 device.device_model().unwrap_or_default(),
                 None,
             ),
-            None => (row.device_id.to_string(), String::new(), Some("(N/A)")),
+            None => ctx
+                .state
+                .find_zone_slave(&row.device_id)
+                .and_then(|s| s.group_status.as_ref())
+                .and_then(|s| Some((s.name.as_ref()?.to_owned(), s.model.clone(), None)))
+                .unwrap_or_else(|| (row.device_id.to_string(), String::new(), Some("(N/A)"))),
         };
 
         let mut header = Vec::new();
