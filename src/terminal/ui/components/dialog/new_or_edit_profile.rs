@@ -4,8 +4,9 @@ use strum::IntoEnumIterator;
 
 use super::prelude::*;
 use crate::bluos::profile::{
-    DeviceProfile, GroupProfile, GroupProfileDevice, MultiplayerGroupProfile,
-    MultiplayerGroupProfileSlave, Profile, SourceSelection,
+    DeviceProfile, GroupProfile, GroupProfileDevice, HomeTheaterGroupProfile,
+    HomeTheaterGroupProfileSlave, MultiplayerGroupProfile, MultiplayerGroupProfileSlave, Profile,
+    SourceSelection,
 };
 use crate::bluos::{
     AudioPreset, DISTANCE_MAX, DISTANCE_MIN, DISTANCE_STEP_RESOLUTION, DeviceAudioSettings,
@@ -866,7 +867,7 @@ impl NewOrEditProfileDialog {
 
         let profile = match self.selected_profile_type {
             ProfileType::NormalGroup => {
-                let mut devices: Vec<_> = self
+                let (mut masters, slaves): (Vec<_>, Vec<_>) = self
                     .selected_devices_for_group
                     .iter()
                     .map(|d| GroupProfileDevice {
@@ -882,26 +883,28 @@ impl NewOrEditProfileDialog {
                         virtualizer: d.virtualizer,
                         volume_leveler: d.volume_leveler,
                     })
-                    .collect();
+                    .partition(|d| self.device_role(&d.device_id) == DeviceRole::Master);
 
-                anyhow::ensure!(!devices.is_empty(), "no devices");
+                anyhow::ensure!(masters.len() == 1, "master not found");
+                anyhow::ensure!(slaves.len() > 0, "slaves not found");
 
                 Profile::Group(GroupProfile {
                     source,
-                    master: devices.remove(0),
-                    slaves: devices,
+                    master: masters.remove(0),
+                    slaves,
                     ungroup_extra: None,
                 })
             }
             ProfileType::MultiplayerGroup => {
                 let master = self
                     .selected_devices_for_group
-                    .first()
+                    .iter()
+                    .find(|d| self.device_role(&d.device_id) == DeviceRole::Master)
                     .context("no master")?;
                 let slaves = self
                     .selected_devices_for_group
                     .iter()
-                    .skip(1)
+                    .filter(|d| self.device_role(&d.device_id) == DeviceRole::Slave)
                     .map(|d| {
                         anyhow::Ok(MultiplayerGroupProfileSlave {
                             device_id: d.device_id,
@@ -951,7 +954,61 @@ impl NewOrEditProfileDialog {
                 })
             }
             ProfileType::HomeTheaterGroup => {
-                anyhow::bail!("Home-theater group available in future release.")
+                let master = self
+                    .selected_devices_for_group
+                    .iter()
+                    .find(|d| self.device_role(&d.device_id) == DeviceRole::Front)
+                    .context("no master/front")?;
+                let side_left = self
+                    .selected_devices_for_group
+                    .iter()
+                    .find(|d| self.device_role(&d.device_id) == DeviceRole::SideLeft)
+                    .map(|d| {
+                        anyhow::Ok(HomeTheaterGroupProfileSlave {
+                            device_id: d.device_id,
+                            led_brightness: d.led_brightness,
+                            node_name: d.node_name.clone().context("missing node name")?,
+                            volume_trim: d.volume_trim,
+                            distance: d.distance.context("missing distance")?,
+                        })
+                    })
+                    .transpose()?
+                    .context("no side left")?;
+                let side_right = self
+                    .selected_devices_for_group
+                    .iter()
+                    .find(|d| self.device_role(&d.device_id) == DeviceRole::SideRight)
+                    .map(|d| {
+                        anyhow::Ok(HomeTheaterGroupProfileSlave {
+                            device_id: d.device_id,
+                            led_brightness: d.led_brightness,
+                            node_name: d.node_name.clone().context("missing node name")?,
+                            volume_trim: d.volume_trim,
+                            distance: d.distance.context("missing distance")?,
+                        })
+                    })
+                    .transpose()?
+                    .context("no side right")?;
+
+                Profile::HomeTheaterGroup(HomeTheaterGroupProfile {
+                    side_right,
+                    side_left,
+                    source,
+                    group_name,
+                    master: master.device_id,
+                    distance: master.distance.context("missing distance")?,
+                    volume_level: master.volume_level,
+                    node_name: master.node_name.clone(),
+                    audio_preset: master.audio_preset,
+                    treble_eq: master.treble_eq,
+                    bass_eq: master.bass_eq,
+                    center_trim: master.center_trim,
+                    surround_upmixer: master.surround_upmixer,
+                    virtualizer: master.virtualizer,
+                    volume_leveler: master.volume_leveler,
+                    led_brightness: master.led_brightness,
+                    ungroup_extra: None,
+                })
             }
         };
 

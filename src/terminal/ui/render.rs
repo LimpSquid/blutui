@@ -195,7 +195,7 @@ pub fn render(frame: &mut Frame, state: &AppState, ui: &mut Ui) {
 fn render_busy_indicator(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     if !ctx.state.busy_flags.is_empty() {
         ctx.frame.render_widget(
-            "●".fg(ctx.ui.stylesheet.highlight_color),
+            "●".fg(ctx.ui.stylesheet.highlight_color_dark),
             Rect::new(area.width.max(1) - 1, area.height.max(1) - 1, 1, 1),
         );
     }
@@ -316,32 +316,33 @@ fn render_discovered_devices_window(ctx: &mut RenderContext<'_, '_>, area: Rect)
                 let device_model = state.device_model().unwrap_or("N/A".to_string());
                 let device_last_update = device.last_update;
 
-                vec![Line::from(vec![
+                let mut spans = vec![
                     device_name.fg(ctx.ui.stylesheet.text_color),
                     format!(" ({device_model})").fg(ctx.ui.stylesheet.text_color_sub),
-                    if let Some((group_color, group_status)) = group_status
-                        .as_ref()
-                        .and_then(|s| Some((uuid_to_color(s.group_id()?), s)))
-                    {
-                        if group_status.am_i_master() {
-                            format!(" {MASTER_SYMBOL}")
-                        } else if group_status.am_i_zone_slave() {
-                            format!(" {ZONE_SLAVE_SYMBOL}")
-                        } else if group_status.am_i_slave() {
-                            format!(" {SLAVE_SYMBOL}")
-                        } else {
-                            "".to_string()
-                        }
-                        .fg(group_color)
-                    } else {
-                        "".into()
-                    },
-                    if Utc::now() - device_last_update >= Duration::seconds(90) {
-                        Span::from(format!(" {WARNING_SYMBOL}"))
-                    } else {
-                        Span::from("")
-                    },
-                ])]
+                ];
+
+                if let Some((group_color, group_status)) = group_status
+                    .as_ref()
+                    .and_then(|s| Some((uuid_to_color(s.group_id()?), s)))
+                {
+                    if group_status.am_i_master() {
+                        spans.push(format!(" [M]").fg(group_color).bold());
+                        spans.push(
+                            format!(" ({})", group_status.num_of_slaves())
+                                .fg(ctx.ui.stylesheet.text_color_sub),
+                        );
+                    } else if group_status.am_i_zone_slave() {
+                        spans.push(" [ZS]".fg(group_color));
+                    } else if group_status.am_i_slave() {
+                        spans.push(" [S]".fg(group_color));
+                    }
+                }
+
+                if Utc::now() - device_last_update >= Duration::seconds(90) {
+                    spans.push(format!(" {WARNING_SYMBOL}").into());
+                }
+
+                vec![Line::from(spans)]
             })
             .collect::<List>()
             .highlight_style(Style::new().bg(ctx.ui.stylesheet.accent_color_dark).bold());
@@ -571,7 +572,8 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
     let profile_title = match selected_profile {
         Some(Ok(Profile::Device(_))) => "single device details",
         Some(Ok(Profile::Group(_))) => "normal group details",
-        Some(Ok(Profile::MultiplayerGroup(_))) => "multi-player group details",
+        Some(Ok(Profile::MultiplayerGroup(_))) => "multiplayer group details",
+        Some(Ok(Profile::HomeTheaterGroup(_))) => "home-theater group details",
         _ => "profile details",
     };
     let area = render_groupbox(ctx, Some(profile_title), area, false);
@@ -824,7 +826,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     None,
                     None,
                     None,
-                    Some(p.distance),
+                    Some(p.side_left.distance),
                 ),
             });
             rows.push(Row {
@@ -842,7 +844,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                     None,
                     None,
                     None,
-                    Some(p.distance),
+                    Some(p.side_right.distance),
                 ),
             });
         }
@@ -912,11 +914,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
                 device.device_model().unwrap_or_default(),
                 None,
             ),
-            None => (
-                row.device_id.to_string(),
-                String::new(),
-                Some("(not available)"),
-            ),
+            None => (row.device_id.to_string(), String::new(), Some("(N/A)")),
         };
 
         let mut header = Vec::new();

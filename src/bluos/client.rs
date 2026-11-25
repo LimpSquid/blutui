@@ -130,6 +130,29 @@ impl HttpClient {
         Ok(group_status)
     }
 
+    pub async fn get_zone_slave_group_status(
+        &self,
+        (slave_ip, slave_port): (IpAddr, u16),
+        poll_opts: Option<PollOpts>,
+    ) -> anyhow::Result<DeviceGroupStatus> {
+        let response = self
+            .client
+            .get(self.api_path("proxyToSlave")?)
+            .query(&[
+                ("slave", format!("{slave_ip}:{slave_port}")),
+                ("url", "/SyncStatus".to_string()),
+            ])
+            .poll_opts(poll_opts)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+        let group_status = quick_xml::de::from_str(&response)?;
+
+        Ok(group_status)
+    }
+
     pub async fn get_volume(&self, poll_opts: Option<PollOpts>) -> anyhow::Result<DeviceVolume> {
         let response = self
             .client
@@ -599,10 +622,13 @@ impl HttpClient {
                 }
             }
             ZoneMode::MultiplayerGroup { group_name } => {
-                query.push(("channelMode", "default".to_string()));
+                query.push(("channelMode", ZoneChannel::Default.to_string()));
                 query.push((
                     "slaveChannelMode",
-                    endpoints.iter().map(|_| "default").join(","),
+                    endpoints
+                        .iter()
+                        .map(|_| ZoneChannel::Default.to_string())
+                        .join(","),
                 ));
                 if let Some(group_name) = group_name {
                     query.push(("group", group_name));

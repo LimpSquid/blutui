@@ -123,6 +123,12 @@ pub struct DeviceGroupZoneSlave {
     pub model: Option<String>,
 }
 
+impl DeviceGroupZoneSlave {
+    pub fn ip_and_port(&self) -> (IpAddr, u16) {
+        (self.ip_addr, *self.port)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioPresetUrl {
     #[serde(rename = "@url")]
@@ -132,6 +138,7 @@ pub struct AudioPresetUrl {
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -157,6 +164,7 @@ pub enum ZoneChannel {
     SideRight,
     // Powernode, etc
     Side,
+    Default,
     #[serde(other)]
     #[strum(disabled)]
     Unknown,
@@ -233,6 +241,8 @@ pub struct DeviceGroupStatus {
     pub name: Option<String>,
     #[serde(rename = "@mac")]
     pub mac_address: Option<String>,
+    #[serde(rename = "@channelMode")]
+    pub channel: Option<ZoneChannel>,
     pub master: Option<DeviceGroupMaster>,
     #[serde(default)]
     pub slave: Vec<DeviceGroupSlave>,
@@ -247,6 +257,10 @@ pub struct DeviceGroupStatus {
 }
 
 impl DeviceGroupStatus {
+    pub fn num_of_slaves(&self) -> usize {
+        self.zone_slave.len() + self.slave.len()
+    }
+
     pub fn am_i_grouped(&self) -> bool {
         self.am_i_master() || self.am_i_slave() || self.am_i_zone_slave()
     }

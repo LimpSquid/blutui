@@ -7,7 +7,9 @@ use strum::IntoEnumIterator;
 
 use super::super::client::ZoneMode;
 use super::common::*;
-use crate::bluos::{AudioPreset, LedBrightness, SettingState, VOLUME_LEVEL_MAX, VOLUME_LEVEL_MIN};
+use crate::bluos::{
+    AudioPreset, LedBrightness, SettingState, VOLUME_LEVEL_MAX, VOLUME_LEVEL_MIN, ZoneChannel,
+};
 use crate::types::DeviceId;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -28,6 +30,8 @@ pub(super) enum State {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MultiplayerGroupProfileSlave {
     pub device_id: DeviceId,
+    /// TODO: Instead of relying on node name for grouping we can use proxyToSlave for SyncStatus to figure out the MAC addresses
+    /// of the zone slaves, which can then be converted into DeviceId's with DeviceId::from_mac.
     pub node_name: String,
     /// Volume trim in dB
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -213,6 +217,10 @@ impl StateMachine for MultiplayerGroupProfile {
             State::Check => match try_find_facts_by_id(facts, &self.master) {
                 Ok(facts)
                     if facts.group_status.slave.is_empty()
+                        && facts
+                            .group_status
+                            .channel
+                            .is_some_and(|c| c == ZoneChannel::Default)
                         && facts.group_status.zone_slave.len() == self.slaves.len()
                         && self.slaves.iter().all(|s| {
                             facts

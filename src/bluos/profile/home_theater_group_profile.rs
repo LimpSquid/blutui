@@ -235,6 +235,10 @@ impl StateMachine for HomeTheaterGroupProfile {
             State::Check => match try_find_facts_by_id(facts, &self.master) {
                 Ok(facts)
                     if facts.group_status.slave.is_empty()
+                        && facts
+                            .group_status
+                            .channel
+                            .is_some_and(|c| c == ZoneChannel::Front)
                         && facts.group_status.zone_slave.len() == self.slaves().len()
                         && self.slaves().iter().all(|s| {
                             facts

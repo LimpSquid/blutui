@@ -1,10 +1,7 @@
 use ratatui::style::Color;
 
 pub const NON_BREAKING_SPACE: char = '\u{00A0}';
-pub const HIGHLIGHT_SYMBOL: char = '🟊';
-pub const MASTER_SYMBOL: char = '★';
-pub const SLAVE_SYMBOL: char = '●';
-pub const ZONE_SLAVE_SYMBOL: char = '¶';
+pub const HIGHLIGHT_SYMBOL: char = '●';
 pub const WARNING_SYMBOL: &str = "⚠️";
 pub const DOT_DIVIDER: &str = "•";
 pub const LINE_DIVIDER: &str = "|";

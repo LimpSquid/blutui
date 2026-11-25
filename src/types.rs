@@ -16,6 +16,20 @@ impl DeviceId {
     pub fn new(node_id: &[u8]) -> Self {
         Self(Uuid::new_v5(&DEVICE_ID_NS, node_id))
     }
+
+    pub fn from_mac(mac: &str) -> anyhow::Result<Self> {
+        let parts: Vec<&str> = mac.split(':').collect();
+
+        anyhow::ensure!(parts.len() == 6, "expected six colon-separated bytes");
+
+        let mut node_id = [0u8; 6];
+        for (i, part) in parts.iter().enumerate() {
+            node_id[i] = u8::from_str_radix(part, 16)
+                .map_err(|_| anyhow::anyhow!("invalid MAC byte: {part}"))?;
+        }
+
+        Ok(Self::new(&node_id))
+    }
 }
 
 impl std::str::FromStr for DeviceId {
