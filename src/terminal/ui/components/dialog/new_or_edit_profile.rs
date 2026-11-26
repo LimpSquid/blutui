@@ -21,7 +21,7 @@ const VOLUME_LEVEL_RESOLUTION: f64 = 1.0;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum_macros::EnumIter)]
 enum ProfileType {
-    SingleDevice,
+    StandaloneDevice,
     #[default]
     NormalGroup,
     MultiplayerGroup,
@@ -31,7 +31,7 @@ enum ProfileType {
 impl ProfileType {
     fn list_text(&self) -> &'static str {
         match self {
-            Self::SingleDevice => "Single Device",
+            Self::StandaloneDevice => "Standalone Device",
             Self::NormalGroup => "Normal Group",
             Self::MultiplayerGroup => "Multi Player Group",
             Self::HomeTheaterGroup => "Home-theater Group",
@@ -44,7 +44,7 @@ impl ProfileType {
                 "A standard group of BluOS players that can be controlled individually."
             }
             Self::MultiplayerGroup => "Multiple BluOS players playing the same audio in sync.",
-            Self::SingleDevice => "A single BluOS player.",
+            Self::StandaloneDevice => "A standalone BluOS player.",
             Self::HomeTheaterGroup => {
                 "Multiple BluOS players in a home-theater surround sound setup."
             }
@@ -53,7 +53,7 @@ impl ProfileType {
 
     fn min_num_devices(&self) -> usize {
         match self {
-            Self::SingleDevice => 1,
+            Self::StandaloneDevice => 1,
             Self::NormalGroup => 2,
             Self::MultiplayerGroup => 2,
             Self::HomeTheaterGroup => 3,
@@ -62,7 +62,7 @@ impl ProfileType {
 
     fn max_num_devices(&self) -> usize {
         match self {
-            Self::SingleDevice => 1,
+            Self::StandaloneDevice => 1,
             Self::NormalGroup => usize::MAX,
             Self::MultiplayerGroup => usize::MAX,
             Self::HomeTheaterGroup => 3,
@@ -124,6 +124,7 @@ enum DeviceRole {
     Front,
     SideLeft,
     SideRight,
+    Standalone,
     None,
 }
 
@@ -465,7 +466,7 @@ impl NewOrEditProfileDialog {
 
         match profile {
             Profile::Device(p) => {
-                dialog.selected_profile_type = ProfileType::SingleDevice;
+                dialog.selected_profile_type = ProfileType::StandaloneDevice;
                 dialog.selected_devices_for_group.push(DeviceSettings {
                     device_id: p.device_id,
                     volume_level: p.volume_level,
@@ -628,6 +629,7 @@ impl NewOrEditProfileDialog {
             (ProfileType::NormalGroup | ProfileType::MultiplayerGroup, Some(_)) => {
                 DeviceRole::Slave
             }
+            (ProfileType::StandaloneDevice, Some(0)) => DeviceRole::Standalone,
             _ => DeviceRole::None,
         }
     }
@@ -684,7 +686,7 @@ impl NewOrEditProfileDialog {
                 DeviceSettingKind::LedBrightness.optional(),
                 DeviceSettingKind::Distance.required(),
             ],
-            ProfileType::SingleDevice | ProfileType::NormalGroup => vec![
+            ProfileType::StandaloneDevice | ProfileType::NormalGroup => vec![
                 DeviceSettingKind::VolumeLevel.optional(),
                 DeviceSettingKind::LedBrightness.optional(),
                 DeviceSettingKind::NodeName.optional(),
@@ -933,7 +935,7 @@ impl NewOrEditProfileDialog {
                     ungroup_extra: None,
                 })
             }
-            ProfileType::SingleDevice => {
+            ProfileType::StandaloneDevice => {
                 let device = self
                     .selected_devices_for_group
                     .first()
@@ -1132,7 +1134,9 @@ impl NewOrEditProfileDialog {
                         DeviceRole::SideRight => {
                             "SIDE RIGHT ".fg(ctx.stylesheet.highlight_color_dark).bold()
                         }
-                        DeviceRole::Slave => "☑ ".fg(ctx.stylesheet.text_color).bold(),
+                        DeviceRole::Slave | DeviceRole::Standalone => {
+                            "☑ ".fg(ctx.stylesheet.text_color).bold()
+                        }
                         DeviceRole::None => "☐ ".fg(ctx.stylesheet.text_color_sub).bold(),
                     }];
                     line.push(device_name.fg(ctx.stylesheet.text_color));

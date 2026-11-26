@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::Duration;
 
+use futures::StreamExt;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::sleep;
 
@@ -286,6 +287,7 @@ async fn device_group_status_syncer(
             status = client.get_group_status(poll_opts.clone()) => match status {
                 Ok(status) => {
                     tokio::spawn(poll_zone_slaves(
+                        device.id,
                         event_bus.clone(),
                         client.clone(),
                         status
@@ -309,27 +311,27 @@ async fn device_group_status_syncer(
 
 #[tracing::instrument(skip_all)]
 async fn poll_zone_slaves(
+    device_id: DeviceId,
     event_bus: EventBus,
     master_client: HttpClient,
     endpoints: Vec<(IpAddr, u16)>,
 ) {
-    for endpoint in endpoints {
-        let Ok(group_status) = master_client
-            .get_zone_slave_group_status(endpoint, None)
-            .await
-        else {
-            continue;
-        };
-        let Some(Ok(zone_slave_id)) = group_status.mac_address.as_deref().map(DeviceId::from_mac)
-        else {
-            continue;
-        };
+    let status = futures::stream::iter(endpoints)
+        .map(|endpoint| master_client.get_zone_slave_group_status(endpoint, None))
+        .buffered(5)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .filter_map(|result| match result {
+            Ok(s) => Some(s),
+            Err(error) => {
+                tracing::error!(%device_id, ?error, "failed to poll zone slave");
+                None
+            }
+        })
+        .collect();
 
-        event_bus.publish_lossy(Event::ZoneSlaveGroupStatusUpdated(
-            zone_slave_id,
-            group_status,
-        ));
-    }
+    event_bus.publish_lossy(Event::DeviceZoneSlaveGroupStatusUpdated(device_id, status));
 }
 
 #[tracing::instrument(skip_all)]

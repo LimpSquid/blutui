@@ -22,6 +22,7 @@ pub enum Event {
     DeviceStatusUpdated(DeviceId, DeviceStatus),
     DeviceVolumeUpdated(DeviceId, DeviceVolume),
     DeviceGroupStatusUpdated(DeviceId, DeviceGroupStatus),
+    DeviceZoneSlaveGroupStatusUpdated(DeviceId, Vec<DeviceGroupStatus>),
     DevicePolled(
         DeviceId,
         DeviceDiagnostics,
@@ -30,7 +31,6 @@ pub enum Event {
         DevicePlayerSettings,
         DevicePresets,
     ),
-    ZoneSlaveGroupStatusUpdated(DeviceId, DeviceGroupStatus),
     ProfileTransitionStarted,
     ProfileTransitionCompleted(Arc<anyhow::Result<()>>),
     ProfilesLoaded(Arc<Vec<StoredProfile>>),

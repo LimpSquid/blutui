@@ -570,7 +570,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
         .and_then(|profile_id| ctx.state.find_profile(profile_id))
         .map(|p| p.profile.as_ref());
     let profile_title = match selected_profile {
-        Some(Ok(Profile::Device(_))) => "single device details",
+        Some(Ok(Profile::Device(_))) => "standalone device details",
         Some(Ok(Profile::Group(_))) => "normal group details",
         Some(Ok(Profile::MultiplayerGroup(_))) => "multiplayer group details",
         Some(Ok(Profile::HomeTheaterGroup(_))) => "home-theater group details",
@@ -892,7 +892,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             }
         };
         lines.push(Line::from(vec![
-            format!("{:<label_width$}", "source").fg(ctx.ui.stylesheet.text_color_sub),
+            format!("{:<label_width$}", "source ").fg(ctx.ui.stylesheet.text_color_sub),
             value.fg(ctx.ui.stylesheet.text_color),
         ]));
     }
@@ -916,8 +916,7 @@ fn render_profile_details_window(ctx: &mut RenderContext<'_, '_>, area: Rect) {
             ),
             None => ctx
                 .state
-                .find_zone_slave(&row.device_id)
-                .and_then(|s| s.group_status.as_ref())
+                .find_zone_slave_group_status(&row.device_id)
                 .and_then(|s| Some((s.name.as_ref()?.to_owned(), s.model.clone(), None)))
                 .unwrap_or_else(|| (row.device_id.to_string(), String::new(), Some("(N/A)"))),
         };
